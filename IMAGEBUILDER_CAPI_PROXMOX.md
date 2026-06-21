@@ -166,3 +166,193 @@ The end result is a VM template, not an image file you download (no `.qcow2`/`.r
 | Ceph RBD | `raw` only |
 
 If your storage is `local-lvm` (Proxmox's default in most setups), choosing `qcow2` will make the build fail — LVM-thin doesn't support the file-based disk structure `qcow2` needs; it only supports block-level `raw` disks.
+
+
+## Step 5: Create the bootstrap cluster (kind)
+ 
+Official doc: https://cluster-api.sigs.k8s.io/user/quick-start
+ 
+CAPI needs an existing K8s cluster to run on (the "management cluster"). Common practice is to spin up a temporary local `kind` cluster, bootstrap CAPI on it, then `clusterctl move` CAPI into the real cluster once it exists — kind gets deleted afterward.
+ 
+```bash
+kind create cluster --name capi-bootstrap
+kubectl cluster-info
+```
+ 
+<details>
+<summary><strong>Issue 4 — kubelet refuses to start: cgroup v1 not supported</strong></summary>
+Symptom: `kind create cluster` fails during `kubeadm init` with `connection refused` / `context deadline exceeded` on `172.18.0.2:6443`. Tried this both in WSL2 and in native Windows (downloaded `kind.exe`, `kubectl.exe`, `clusterctl.exe` separately) — **same error in both**, which ruled out WSL/NAT as the cause (Docker Desktop uses a WSL2 backend either way, confirmed via `docker logs <container>` showing `Detected virtualization wsl`).
+ 
+Root cause, found via:
+```bash
+docker exec capi-bootstrap-control-plane systemctl status kubelet
+docker exec capi-bootstrap-control-plane journalctl -u kubelet -n 100 --no-pager
+```
+which showed:
+```
+kubelet is configured to not run on a host using cgroup v1. cgroup v1 support is unsupported and will be removed in a future release
+```
+The `kindest/node:v1.36.1` image flat out refuses to boot on cgroup v1. The WSL2 distro's kernel was still using cgroup v1.
+ 
+**Fix:** force the WSL2 kernel to use cgroup v2.
+```powershell
+notepad $env:USERPROFILE\.wslconfig
+```
+```ini
+[wsl2]
+kernelCommandLine = cgroup_no_v1=all
+```
+Close Docker Desktop and all terminal/WSL windows first, then:
+```powershell
+wsl --shutdown
+```
+Reopen Docker Desktop, verify with `cat /sys/fs/cgroup/cgroup.controllers` (should print a list, not error) — then `kind create cluster` worked immediately, all pods `Running`.
+ 
+ 
+</details>
+Verify:
+```bash
+kubectl get pods -A
+```
+All pods (`etcd`, `kube-apiserver`, `coredns`, etc.) should be `Running`.
+ 
+---
+ 
+## Step 6: Initialize the management cluster with clusterctl
+ 
+Proxmox provider doc: https://github.com/ionos-cloud/cluster-api-provider-proxmox/blob/main/docs/Usage.md
+ 
+```bash
+export PROXMOX_URL="https://192.168.0.100:8006"
+export PROXMOX_TOKEN='capi@pve!capitoken'
+export PROXMOX_SECRET="9d4f1434-3d92-40bd-9284-746ea7ade180"
+ 
+clusterctl init --infrastructure proxmox --ipam in-cluster
+```
+ 
+> ⚠️ **Naming gotcha:** Image Builder and CAPMOX use *different* env var names for the same credentials. Image Builder: `PROXMOX_USERNAME` (token ID) + `PROXMOX_TOKEN` (secret). CAPMOX: `PROXMOX_TOKEN` (token ID) + `PROXMOX_SECRET` (secret). Same values, different variable names — mixing them up across terminal sessions causes auth failures. Use a fresh terminal for this step.
+ 
+The `--ipam in-cluster` flag installs a controller that statically assigns IPs to new VMs from a defined pool (`NODE_IP_RANGES`) — workload cluster nodes need stable IPs, can't rely on DHCP for this.
+ 
+Verify:
+```bash
+kubectl get pods -A
+```
+Should see `capi-system`, `capi-kubeadm-bootstrap-system`, `capi-kubeadm-control-plane-system`, `capmox-system`, `capi-ipam-in-cluster-system`, all `1/1 Running` (IPAM pod may take a minute longer to become ready).
+ 
+---
+ 
+## Step 7: Set workload cluster variables
+ 
+```bash
+# SSH key (used to access the VMs)
+ssh-keygen -t ed25519 -C "capi-cluster"
+```
+ 
+```bash
+# --- Proxmox auth (CAPMOX naming, see gotcha above) ---
+export PROXMOX_URL="https://192.168.0.100:8006"
+export PROXMOX_TOKEN='capi@pve!capitoken'
+export PROXMOX_SECRET="9d4f1434-3d92-40bd-9284-746ea7ade180"
+ 
+# --- Template info ---
+export PROXMOX_SOURCENODE="pve"
+export TEMPLATE_VMID="100"
+ 
+# --- Which Proxmox nodes VMs can land on ---
+export ALLOWED_NODES="[pve]"   # single node for now, will become [pve1,pve2,...] with 4 physical machines
+ 
+# --- SSH ---
+export VM_SSH_KEYS="$(cat ~/.ssh/id_ed25519.pub)"
+ 
+# --- Networking ---
+export CONTROL_PLANE_ENDPOINT_IP="192.168.0.150"      # see kube-vip note below
+export NODE_IP_RANGES="[192.168.0.151-192.168.0.160]" # static IP pool for nodes
+export GATEWAY="192.168.0.1"                          # LAN router IP, not the Proxmox host IP
+export IP_PREFIX="24"
+export DNS_SERVERS="[8.8.8.8,8.8.4.4]"
+export BRIDGE="vmbr0"
+ 
+# --- VM sizing (small for first test) ---
+export BOOT_VOLUME_DEVICE="scsi0"   # matches the disk controller Image Builder used (virtio-scsi-pci)
+export BOOT_VOLUME_SIZE="50"
+export NUM_SOCKETS="1"
+export NUM_CORES="2"
+export MEMORY_MIB="4096"
+ 
+# --- Required feature flags ---
+export EXP_CLUSTER_RESOURCE_SET="true"
+export CLUSTER_TOPOLOGY="true"
+```
+ 
+**kube-vip / `CONTROL_PLANE_ENDPOINT_IP` note:** this is *not* a MetalLB-style pool. It's a separate, fixed IP (outside `NODE_IP_RANGES`, same subnet) that `kube-vip` floats across whichever control-plane node is currently healthy. `kubectl`/`kubeconfig` always points here — if a control-plane node dies, kube-vip moves this IP to a surviving one, transparently. MetalLB (planned separately, later) is unrelated — that's for exposing in-cluster `Service: LoadBalancer` apps, not for reaching the K8s API itself.
+ 
+---
+ 
+## Step 8: Generate and apply the workload cluster
+ 
+```bash
+clusterctl generate cluster proxmox-quickstart \
+  --infrastructure proxmox \
+  --kubernetes-version v1.36.1 \
+  --control-plane-machine-count 1 \
+  --worker-machine-count 1 > cluster.yaml
+ 
+kubectl apply -f cluster.yaml
+```
+ 
+Check status:
+```bash
+clusterctl describe cluster proxmox-quickstart
+kubectl get machines
+```
+
+ 
+## Step 9: Get kubeconfig and install CNI
+ 
+```bash
+clusterctl get kubeconfig proxmox-quickstart > proxmox-quickstart.kubeconfig
+```
+ 
+Nodes will show `NotReady` until a CNI is installed — this is expected, not an error:
+```bash
+KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get nodes
+```
+ 
+ <details>
+<summary><strong>Issue 5 — nodes stuck NotReady: Calico init containers crash with "v2 microarchitecture" error</strong></summary>
+After CNI install (see Step 9), `calico-node` pods stuck in `Init:Error`:
+```bash
+kubectl logs calico-node-xxxxx -n kube-system -c upgrade-ipam
+# This program can only be run on AMD64 processors with v2 microarchitecture support.
+```
+ 
+Root cause: the template VM (and any VM cloned from it) had **CPU type `kvm64`** in Proxmox — Proxmox's old default virtual CPU model, which only exposes **x86-64-v1** instruction set to the guest, regardless of what the underlying physical CPU (i5-6600T, which supports v3) actually supports. The Calico `v3.32.0` image requires v2 minimum, so it refuses to run.
+ 
+Quick test fix (per-VM, not persistent): stop the VM → `Hardware → Processors → Edit → CPU type: host` → start. Calico pods went `Running` immediately.
+ 
+**Permanent fix:** fix the *template* itself, not each cloned VM (since every new node is cloned from it and would otherwise hit this every time):
+
+2. **Hardware → Processors → Edit → CPU type: `host`**
+
+No `cpuType` field exists in CAPMOX's `ProxmoxMachineTemplate` schema (checked) — this has to be fixed at the template level in Proxmox, not via CAPI YAML.
+ 
+After fixing the template: `kubectl delete cluster proxmox-quickstart`, regenerate + reapply → new VMs come up with `host` CPU type from the start, Calico goes `Running` without manual intervention.
+ 
+</details>
+---
+
+Install Calico:
+```bash
+kubectl --kubeconfig=proxmox-quickstart.kubeconfig \
+  apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
+```
+ 
+> Always use `--kubeconfig=proxmox-quickstart.kubeconfig` (or `KUBECONFIG=... kubectl ...`) for anything targeting the workload cluster. A bare `kubectl` command still points at the kind management cluster.
+ 
+Wait, then verify:
+```bash
+KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get pods -n kube-system
+KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get nodes
+```
+Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
