@@ -298,9 +298,16 @@ clusterctl generate cluster proxmox-quickstart \
   --control-plane-machine-count 1 \
   --worker-machine-count 1 > cluster.yaml
  
+```
+CAPMOX's default cluster template also hardcodes pod subnet `192.168.0.0/16` in the generated `cluster.yaml`. This place need the fix:
+ 
+**In the generated `cluster.yaml`** (right after `clusterctl generate cluster`, before `kubectl apply`):
+```bash
+sed -i 's/192.168.0.0\/16/10.244.0.0\/16/g' cluster.yaml
+```
+```bash
 kubectl apply -f cluster.yaml
 ```
- 
 Check status:
 ```bash
 clusterctl describe cluster proxmox-quickstart
@@ -342,12 +349,40 @@ After fixing the template: `kubectl delete cluster proxmox-quickstart`, regenera
 </details>
 ---
 
-Install Calico:
+<details>
+<summary><strong>Issue 6 — pods unreachable from the LAN: Calico's default pod CIDR collides with the home network</strong></summary>
+**Root cause:** Calico's official manifest (`calico.yaml`) defaults to pod CIDR `192.168.0.0/16`. The homelab LAN is `192.168.0.0/24` (Proxmox host: `192.168.0.100`), which falls *inside* that `/16` range.
+ 
+What goes wrong: a pod gets an IP like `192.168.204.135`. When that pod tries to reach `192.168.0.100` (the Proxmox host), Calico checks its pool — `192.168.0.100` falls inside `192.168.0.0/16`, so Calico assumes the destination is *another pod in the cluster* and skips IP masquerade (outgoing NAT). The packet leaves the VM with its raw pod-internal source IP (`192.168.204.135`). The Proxmox host receives it, tries to reply, but has no route back to `192.168.204.x` (that's the cluster's internal network, not the LAN) — reply gets dropped by the home router. Result: connections from pods to anything on the LAN hang and time out indefinitely, with no obvious error.
+ 
+**Fix — use a pod CIDR that can't overlap with the LAN** (e.g. `10.244.0.0/16`, well outside any typical home `192.168.x.x` range):
+ 
+CAPMOX's default cluster template also hardcodes `192.168.0.0/16` in `cluster.yaml` — that part is already patched in Step 8, before `apply`. The Calico manifest needs the same fix separately:
+ 
+Don't apply the upstream URL directly; download it first and patch the (commented-out, by default) `CALICO_IPV4POOL_CIDR` env var:
 ```bash
-kubectl --kubeconfig=proxmox-quickstart.kubeconfig \
-  apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
+curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
+ 
+# Uncomment the CALICO_IPV4POOL_CIDR name line
+sed -i 's|.*- name: CALICO_IPV4POOL_CIDR.*|            - name: CALICO_IPV4POOL_CIDR|' calico.yaml
+ 
+# Set its value to the non-colliding range
+sed -i 's|.*value: "192.168.0.0/16".*|              value: "10.244.0.0/16"|' calico.yaml
+ 
+kubectl --kubeconfig=proxmox-quickstart.kubeconfig apply -f calico.yaml
 ```
  
+**Takeaway:** always check the LAN subnet against the CNI's default pod CIDR before installing — this only surfaces as a silent timeout, not a clear error, so it's easy to lose time on.
+ 
+</details>
+ 
+---
+Install Calico (with the CIDR fix applied, per Issue 6 above):
+```bash
+kubectl --kubeconfig=proxmox-quickstart.kubeconfig apply -f calico.yaml
+```
+
+
 > Always use `--kubeconfig=proxmox-quickstart.kubeconfig` (or `KUBECONFIG=... kubectl ...`) for anything targeting the workload cluster. A bare `kubectl` command still points at the kind management cluster.
  
 Wait, then verify:
@@ -356,3 +391,56 @@ KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get pods -n kube-system
 KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get nodes
 ```
 Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
+
+## Step 10: Pivot — move CAPI from kind into the real cluster
+ 
+Once the workload cluster (`proxmox-quickstart`) is healthy (CNI installed, nodes `Ready`), CAPI itself can be migrated off the temporary kind cluster and into the real one, so kind can be deleted and the cluster becomes self-managing.
+ 
+### Step 10.1: Re-set env vars (fresh terminal)
+ 
+```bash
+export PROXMOX_URL="https://192.168.0.100:8006"
+export PROXMOX_TOKEN='capi@pve!capitoken'
+export PROXMOX_SECRET="9d4f1434-3d92-40bd-9284-746ea7ade180"
+ 
+export EXP_CLUSTER_RESOURCE_SET="true"
+export CLUSTER_TOPOLOGY="true"
+```
+ 
+### Step 10.2: Install CAPI provider components into the target (workload) cluster
+ 
+`clusterctl move` only *transfers* CAPI objects — it doesn't install CAPI itself on the target. The target needs its own CAPI install first:
+ 
+```bash
+clusterctl init --kubeconfig=proxmox-quickstart.kubeconfig --infrastructure proxmox --ipam in-cluster
+ 
+# wait until capi + capmox pods are 1/1
+KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get pods -A -w
+```
+ 
+### Step 10.3: Move
+ 
+Run from the context still pointing at the **source** (kind):
+```bash
+clusterctl move --to-kubeconfig=proxmox-quickstart.kubeconfig
+```
+ 
+### Step 10.4: Verify the pivot
+ 
+**1. Source (kind) should now be empty:**
+```bash
+kubectl get clusters,machines,proxmoxclusters -A
+```
+ 
+**2. Target (proxmox-quickstart) should now hold the objects:**
+```bash
+KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
+```
+ 
+**3. Ultimate test — delete kind, confirm nothing breaks:**
+```bash
+kind delete cluster --name capi-bootstrap
+KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
+```
+If this still reports the cluster/machines correctly after kind is gone, the pivot succeeded — `proxmox-quickstart` is now self-hosting its own CAPI and can provision/manage further clusters without needing kind again.
+ 
