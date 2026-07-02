@@ -1,0 +1,117 @@
+---
+# Source: todo-service/templates/deployment.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: todo-service
+  namespace: staging
+  labels:
+    app: todo-service
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: todo-service
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: todo-service
+  strategy:
+    canary:
+      canaryService: todo-service-canary
+      stableService: todo-service
+      steps:
+      - setWeight: 20
+      - analysis:
+          templates:
+          - templateName: check-todo-service-readiness
+          args:
+          - name: service-name
+            value: todo-service-canary
+          - name: port
+            value: "8002"
+      - pause: {}
+      - setWeight: 40
+      - pause: { duration: 10s }
+      - analysis:
+          templates:
+          - templateName: check-todo-service-readiness
+          args:
+          - name: service-name
+            value: todo-service-canary
+          - name: port
+            value: "8002"
+      - setWeight: 60
+      - pause: { duration: 10s }
+      - analysis:
+          templates:
+          - templateName: check-todo-service-readiness
+          args:
+          - name: service-name
+            value: todo-service-canary
+          - name: port
+            value: "8002"
+  template:
+    metadata:
+      labels:
+        app: todo-service
+        app.kubernetes.io/name: todo-service
+        app.kubernetes.io/instance: staging-todo-service
+        app.kubernetes.io/component: todo-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+        - name: github-registry-secret
+      containers:
+      - name: todo-service
+        image: ghcr.io/keremar/todo-app-todo-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8002
+        env:
+        - name: SECRET_KEY
+          value: "dev-secret-key-change-in-production"
+        - name: USER_SERVICE_URL
+          value: "http://user-service:8001"
+        - name: DATABASE_URL
+          value: "postgresql://todoservice:todopass@todo-db:5432/tododb"
+        # OpenTelemetry Configuration
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy.observability.svc.cluster.local:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_SERVICE_NAME
+          value: "todo-service"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.namespace=staging,service.version=latest,deployment.environment=staging"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8002
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+

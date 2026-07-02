@@ -1,0 +1,26 @@
+---
+# Source: frontend/templates/analysistemplate.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: check-frontend-readiness
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: staging-frontend
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  args:
+  - name: service-name
+  - name: port
+  
+  metrics:
+  - name: health-check
+    interval: 5s
+    count: 3
+    successCondition: result.statusCode == 200
+    failureLimit: 2
+    provider:
+      web:
+        url: "http://{{args.service-name}}.staging.svc.cluster.local:{{args.port}}/"
+        timeoutSeconds: 5

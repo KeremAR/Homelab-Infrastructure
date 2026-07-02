@@ -1,0 +1,85 @@
+---
+# Source: todo-service/templates/database-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: todo-db
+  namespace: production
+  labels:
+    app: todo-db
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: production-todo-service
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  serviceName: todo-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-db
+  template:
+    metadata:
+      labels:
+        app: todo-db
+        app.kubernetes.io/name: todo-service
+        app.kubernetes.io/instance: production-todo-service
+        app.kubernetes.io/component: database
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: tododb
+        - name: POSTGRES_USER
+          value: todoservice
+        - name: POSTGRES_PASSWORD
+          value: todopass
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - todoservice
+            - -d
+            - tododb
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - todoservice
+            - -d
+            - tododb
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi

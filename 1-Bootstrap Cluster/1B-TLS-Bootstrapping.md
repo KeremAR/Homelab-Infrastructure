@@ -15,11 +15,11 @@ certificate: x509: cannot validate certificate for 192.168.0.150 because it does
  
 This is **not** a CAPI/CAPMOX bug. Kubernetes deliberately does **not** auto-approve kubelet serving-certificate requests, for security reasons (an attacker-controlled CSR impersonating a DNS name/IP could otherwise get a valid cert signed). Client certificates (kubelet → API server, used to join the cluster) *are* auto-approved out of the box via the `system:certificates.k8s.io:certificatesigningrequests:nodeclient` ClusterRole bound to the `system:bootstrappers` group — verify with:
 ```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusterrolebindings | grep -i bootstrap
+kubectl get clusterrolebindings | grep -i bootstrap
 ```
 But there's no equivalent auto-approval ClusterRole for the *serving* cert path — confirmed nothing shows up for:
 ```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusterrolebindings | grep -i "selfnodeserver\|serving"
+kubectl get clusterrolebindings | grep -i "selfnodeserver\|serving"
 ```
 Production clusters hit this too — it's always solved either by manually approving, or by running a dedicated auto-approver controller (see fix below). Reference: [Kubernetes docs — TLS bootstrapping](https://kubernetes.io/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/), [kubeadm certs docs](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/).
  
@@ -60,10 +60,10 @@ kubectl explain kubeadmcontrolplane.spec.kubeadmConfigSpec --recursive | grep -i
 Manually approving CSRs doesn't scale — every new node (autoscaling, remediation after a VM failure, manually adding workers) needs someone to run `kubectl certificate approve` by hand, or it sits `Pending` forever. [`kubelet-csr-approver`](https://github.com/postfinance/kubelet-csr-approver) is a controller that does this automatically, subject to configurable checks.
  
 ```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig helm repo add kubelet-csr-approver https://postfinance.github.io/kubelet-csr-approver
-KUBECONFIG=proxmox-quickstart.kubeconfig helm repo update
+helm repo add kubelet-csr-approver https://postfinance.github.io/kubelet-csr-approver
+helm repo update
  
-KUBECONFIG=proxmox-quickstart.kubeconfig helm install kubelet-csr-approver kubelet-csr-approver/kubelet-csr-approver -n kube-system \
+helm install kubelet-csr-approver kubelet-csr-approver/kubelet-csr-approver -n kube-system \
   --set providerRegex='^proxmox-quickstart.*$' \
   --set providerIpPrefixes='192.168.0.0/24' \
   --set bypassDnsResolution='true'
@@ -98,12 +98,12 @@ kubectl scale machinedeployment proxmox-quickstart-workers --replicas=2
  
 Watch the CSR go from nothing → `Pending` → `Approved`, without running `kubectl certificate approve` manually:
 ```bash
-watch -n 2 'KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get csr'
+watch -n 2 'kubectl get csr'
 ```
  
 In a second terminal, watch the approver reason about it live:
 ```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl logs -n kube-system -l app.kubernetes.io/name=kubelet-csr-approver -f
+kubectl logs -n kube-system -l app.kubernetes.io/name=kubelet-csr-approver -f
 ```
  
 ### MachineDeployment scaling and `maxSurge` — why it needs spare resources

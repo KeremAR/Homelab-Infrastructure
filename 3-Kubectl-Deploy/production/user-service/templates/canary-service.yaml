@@ -1,0 +1,21 @@
+---
+# Source: user-service/templates/canary-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service-canary
+  namespace: production
+  labels:
+    app: user-service
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/instance: production-user-service
+    app.kubernetes.io/component: user-service
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  selector:
+    app: user-service
+  ports:
+  - port: 8001
+    targetPort: 8001
+    protocol: TCP
+  type: ClusterIP

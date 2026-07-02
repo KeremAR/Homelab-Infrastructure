@@ -1,0 +1,21 @@
+---
+# Source: todo-service/templates/canary-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-service-canary
+  namespace: production
+  labels:
+    app: todo-service
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: production-todo-service
+    app.kubernetes.io/component: todo-service
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  selector:
+    app: todo-service
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP
+  type: ClusterIP

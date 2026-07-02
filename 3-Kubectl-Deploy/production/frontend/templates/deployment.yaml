@@ -1,0 +1,88 @@
+---
+# Source: frontend/templates/deployment.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: frontend
+  namespace: production
+  labels:
+    app: frontend
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: production-frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    canary:
+      canaryService: frontend-canary
+      stableService: frontend
+      steps:
+      - setWeight: 20
+      - analysis:
+          templates:
+          - templateName: check-frontend-readiness
+          args:
+          - name: service-name
+            value: frontend-canary
+          - name: port
+            value: "3000"
+      - pause: {}
+      - setWeight: 40
+      - pause: { duration: 10s }
+      - analysis:
+          templates:
+          - templateName: check-frontend-readiness
+          args:
+          - name: service-name
+            value: frontend-canary
+          - name: port
+            value: "3000"
+      - setWeight: 60
+      - pause: { duration: 10s }
+      - analysis:
+          templates:
+          - templateName: check-frontend-readiness
+          args:
+          - name: service-name
+            value: frontend-canary
+          - name: port
+            value: "3000"
+  template:
+    metadata:
+      labels:
+        app: frontend
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/instance: production-frontend
+        app.kubernetes.io/component: frontend
+    spec:
+      imagePullSecrets:
+        - name: github-registry-secret
+      securityContext:
+        fsGroup: 65532
+      containers:
+      - name: frontend
+        image: ghcr.io/keremar/todo-app-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: caddy-config
+          mountPath: /etc/caddy/Caddyfile
+          subPath: Caddyfile
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+      volumes:
+      - name: caddy-config
+        configMap:
+          name: frontend-config
+

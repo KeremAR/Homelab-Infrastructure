@@ -1,0 +1,115 @@
+---
+# Source: user-service/templates/deployment.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: user-service
+  namespace: staging
+  labels:
+    app: user-service
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/instance: staging-user-service
+    app.kubernetes.io/component: user-service
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: user-service
+  strategy:
+    canary:
+      canaryService: user-service-canary
+      stableService: user-service
+      steps:
+      - setWeight: 20
+      - analysis:
+          templates:
+          - templateName: check-user-service-readiness
+          args:
+          - name: service-name
+            value: user-service-canary
+          - name: port
+            value: "8001"
+      - pause: {}
+      - setWeight: 40
+      - pause: { duration: 10s }
+      - analysis:
+          templates:
+          - templateName: check-user-service-readiness
+          args:
+          - name: service-name
+            value: user-service-canary
+          - name: port
+            value: "8001"
+      - setWeight: 60
+      - pause: { duration: 10s }
+      - analysis:
+          templates:
+          - templateName: check-user-service-readiness
+          args:
+          - name: service-name
+            value: user-service-canary
+          - name: port
+            value: "8001"
+  template:
+    metadata:
+      labels:
+        app: user-service
+        app.kubernetes.io/name: user-service
+        app.kubernetes.io/instance: staging-user-service
+        app.kubernetes.io/component: user-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+        - name: github-registry-secret
+      containers:
+      - name: user-service
+        image: ghcr.io/keremar/todo-app-user-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8001
+        env:
+        - name: SECRET_KEY
+          value: "dev-secret-key-change-in-production"
+        - name: DATABASE_URL
+          value: "postgresql://userservice:userpass@user-db:5432/userdb"
+        # OpenTelemetry Configuration
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy.observability.svc.cluster.local:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_SERVICE_NAME
+          value: "user-service"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.namespace=staging,service.version=latest,deployment.environment=staging"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_METRICS_EXPORTER
+          value: "none"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+

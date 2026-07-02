@@ -1,0 +1,27 @@
+---
+# Source: todo-service/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-service
+  namespace: staging
+  labels:
+    app: todo-service
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: todo-service
+    app.kubernetes.io/managed-by: plain-manifests
+  annotations:
+    # Blackbox Exporter: Enable external monitoring (end-to-end latency with network)
+    blackbox.prometheus.io/scrape: "true"
+    blackbox.prometheus.io/path: "/ready"
+    blackbox.prometheus.io/port: "8002"
+    blackbox.prometheus.io/module: "http_2xx"
+spec:
+  selector:
+    app: todo-service
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP
+  type: ClusterIP

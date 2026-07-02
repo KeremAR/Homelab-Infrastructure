@@ -1,0 +1,27 @@
+---
+# Source: todo-service/templates/analysistemplate.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: check-todo-service-readiness
+  namespace: production
+  labels:
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: production-todo-service
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  args:
+  - name: service-name
+  - name: port
+  
+  metrics:
+  - name: readiness-check
+    interval: 5s
+    count: 3
+    successCondition: result == "ready"
+    failureLimit: 2
+    provider:
+      web:
+        url: "http://{{args.service-name}}.production.svc.cluster.local:{{args.port}}/ready"
+        timeoutSeconds: 5
+        jsonPath: "{$.status}"

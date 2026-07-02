@@ -1,0 +1,23 @@
+---
+# Source: todo-service/templates/database-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-db
+  namespace: staging
+  labels:
+    app: todo-db
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: todo-db

@@ -1,0 +1,21 @@
+---
+# Source: frontend/templates/canary-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-canary
+  namespace: production
+  labels:
+    app: frontend
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: production-frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,30 @@
+---
+# Source: frontend/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: staging
+  labels:
+    app: frontend
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/instance: staging-frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/managed-by: plain-manifests
+data:
+  Caddyfile: |
+
+    :3000 {
+        # Static files and SPA routing
+        handle {
+            root * /usr/share/caddy
+    
+            # Cache static assets
+            @static path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
+            header @static Cache-Control "public, max-age=31536000, immutable"
+    
+            # Try to serve file, otherwise serve index.html (SPA routing)
+            try_files {path} /index.html
+            file_server
+        }
+    }

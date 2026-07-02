@@ -1,0 +1,23 @@
+---
+# Source: user-service/templates/database-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db
+  namespace: staging
+  labels:
+    app: user-db
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/instance: staging-user-service
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: plain-manifests
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: user-db
