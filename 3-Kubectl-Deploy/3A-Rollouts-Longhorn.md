@@ -1,4 +1,4 @@
-# Deploy Todo App with Plain Manifests
+# Deploy Todo App with Kubectl
 
 Goal: deploy the todo application manually with plain Kubernetes manifests first. No Helm and no ArgoCD in this phase. Argo Rollouts is still required because the app resources are `Rollout`, not `Deployment`.
 
