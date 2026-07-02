@@ -1,0 +1,3 @@
+[submodule "App"]
+	path = App
+	url = https://github.com/KeremAR/Homelab-App.git
