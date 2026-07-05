@@ -1,0 +1,162 @@
+controller:
+  admin:
+    existingSecret: jenkins-admin-secret
+    userKey: jenkins-admin-user
+    passwordKey: jenkins-admin-password
+
+  serviceType: ClusterIP
+
+  serviceAccount:
+    create: false
+    name: jenkins
+
+  installPlugins:
+    - configuration-as-code
+    - credentials
+    - plain-credentials
+    - git
+    - github
+    - github-branch-source
+    - job-dsl
+    - kubernetes
+    - kubernetes-cli
+    - workflow-aggregator
+    - pipeline-stage-view
+    - basic-branch-build-strategies
+    - timestamper
+    - ws-cleanup
+    - locale
+
+  containerEnv:
+    - name: GITHUB_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-github-secret
+          key: github-username
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-github-secret
+          key: github-token
+
+  JCasC:
+    defaultConfig: true
+    configScripts:
+      jenkins-config: |
+        jenkins:
+          systemMessage: "Homelab Jenkins managed by Helm and JCasC."
+          clouds:
+            - kubernetes:
+                name: "kubernetes"
+                serverUrl: "https://kubernetes.default.svc"
+                namespace: "jenkins"
+                jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
+
+        appearance:
+          locale:
+            systemLocale: "en"
+            ignoreAcceptLanguage: true
+
+        unclassified:
+          globalLibraries:
+            libraries:
+              - name: "homelab-shared-library"
+                defaultVersion: "main"
+                retriever:
+                  modernSCM:
+                    scm:
+                      git:
+                        remote: "https://github.com/KeremAR/Homelab-SharedLibrary.git"
+                        credentialsId: "github-token"
+
+        credentials:
+          system:
+            domainCredentials:
+              - credentials:
+                  - usernamePassword:
+                      scope: GLOBAL
+                      id: "github-token"
+                      username: "${GITHUB_USERNAME}"
+                      password: "${GITHUB_TOKEN}"
+                      description: "GitHub token for repo scan, checkout, and later GHCR push"
+
+        jobs:
+          - script: >
+              multibranchPipelineJob('homelab-app-ci') {
+                displayName('Homelab App CI')
+                description('Runs linting, unit tests, and Trivy checks for Homelab-App branches and pull requests.')
+
+                branchSources {
+                  github {
+                    id('homelab-app-github')
+                    scanCredentialsId('github-token')
+                    repoOwner('KeremAR')
+                    repository('Homelab-App')
+                    buildOriginBranch(true)
+                    buildOriginBranchWithPR(false)
+                    buildOriginPRMerge(true)
+                    buildOriginPRHead(false)
+                    buildForkPRMerge(false)
+                    buildForkPRHead(false)
+                  }
+                }
+
+                factory {
+                  workflowBranchProjectFactory {
+                    scriptPath('Jenkinsfile')
+                  }
+                }
+
+                orphanedItemStrategy {
+                  discardOldItems {
+                    numToKeep(10)
+                  }
+                }
+
+                triggers {
+                  periodicFolderTrigger {
+                    interval('1')
+                  }
+                }
+              }
+
+persistence:
+  enabled: true
+  existingClaim: jenkins-home-pvc
+
+agent:
+  enabled: true
+  imagePullSecretName: ghcr-creds
+  podTemplates:
+    ci-python: |
+      - name: ci-python
+        label: ci-python
+        serviceAccount: jenkins
+        containers:
+          - name: python
+            image: ghcr.io/keremar/ci-python-test-runner:py3.11-v1
+            command: "sleep"
+            args: "infinity"
+            ttyEnabled: true
+            resourceRequestCpu: "100m"
+            resourceRequestMemory: "256Mi"
+            resourceLimitCpu: "1000m"
+            resourceLimitMemory: "1Gi"
+          - name: trivy
+            image: aquasec/trivy:latest
+            command: "sleep"
+            args: "infinity"
+            ttyEnabled: true
+            resourceRequestCpu: "100m"
+            resourceRequestMemory: "256Mi"
+            resourceLimitCpu: "1000m"
+            resourceLimitMemory: "1Gi"
+        volumes:
+          - persistentVolumeClaim:
+              claimName: jenkins-venv-cache-pvc
+              mountPath: /cache/venvs
+              readOnly: false
+          - persistentVolumeClaim:
+              claimName: jenkins-trivy-cache-pvc
+              mountPath: /home/jenkins/.cache/trivy
+              readOnly: false
