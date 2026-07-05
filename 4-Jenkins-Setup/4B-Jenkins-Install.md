@@ -6,7 +6,8 @@ Goal: install Jenkins on the Kubernetes cluster with Helm and JCasC. This first 
 - Jenkins is configured with JCasC.
 - GitHub credentials come from Kubernetes Secrets.
 - App CI is created as a Multibranch Pipeline.
-- The agent has PVC-backed caches for Trivy and Python virtualenvs.
+- The pipeline agent pod template lives in the shared library.
+- The agent uses PVC-backed caches for Trivy and Python virtualenvs.
 - SonarQube, ArgoCD, GitOps deploy, Docker image build, and production deploy are not included yet.
 
 Current Jenkins URL after install:
@@ -29,6 +30,7 @@ This folder contains the Jenkins install manifests:
   jenkins-secrets.yaml
   jenkins-values.yaml
   jenkins-httproute.yaml
+  ci-python-test-runner.Dockerfile
 ```
 
 `jenkins-values.yaml` is used by the Jenkins Helm chart. The other YAML files are applied with `kubectl`.
@@ -197,6 +199,30 @@ sudo apt install -y gettext-base
 
 ## 7. Install Jenkins With Helm
 
+Before installing Jenkins, build and push the CI runner image referenced by the shared library pod template.
+
+Build:
+
+```bash
+docker build \
+  -f 4-Jenkins-Setup/ci-python-test-runner.Dockerfile \
+  -t ghcr.io/keremar/ci-python-test-runner:py3.11-v1 .
+```
+
+Login to GHCR:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+```
+
+Push:
+
+```bash
+docker push ghcr.io/keremar/ci-python-test-runner:py3.11-v1
+```
+
+This image contains common CI tools only. Service dependencies are still installed later into the PVC-backed venv cache.
+
 Add the Jenkins Helm repo:
 
 ```bash
@@ -224,7 +250,7 @@ kubectl get pvc -n jenkins
 
 Jenkins controller should become `Running`.
 
-Important: `jenkins-values.yaml` currently references this CI agent image:
+Important: the shared library pod template currently references this CI agent image:
 
 ```text
 ghcr.io/keremar/ci-python-test-runner:py3.11-v1
@@ -298,6 +324,26 @@ Jenkinsfile
 
 at the root of the app repo.
 
+The Kubernetes agent pod template is intentionally not stored in `jenkins-values.yaml`. It lives in the shared library:
+
+```text
+SharedLibrary/src/com/company/jenkins/Utils.groovy
+SharedLibrary/vars/ciPythonPodTemplate.groovy
+```
+
+That keeps pipeline runtime details versioned with pipeline code instead of Jenkins installation config.
+
+Because `SharedLibrary` is a Git submodule, Jenkins will not read the local working tree directly. Commit and push the shared library repo before expecting Jenkins to use a changed helper:
+
+```bash
+cd SharedLibrary
+git add README.md src/com/company/jenkins/Utils.groovy vars/ciPythonPodTemplate.groovy
+git commit -m "Add CI Python pod template"
+git push
+```
+
+Then update the submodule pointer in the infrastructure repo when needed.
+
 Multibranch Pipeline means Jenkins discovers branches and pull requests automatically. For this project it will be used for CI:
 
 - `feature/*` branch push
@@ -329,7 +375,7 @@ Kept or adapted:
 - GitHub Branch Source
 - Multibranch Pipeline
 - Shared Library
-- Kubernetes dynamic agents
+- Kubernetes dynamic agents, with pod template supplied by the shared library
 - Trivy cache
 
 Added:
@@ -372,6 +418,30 @@ JCasC job not created:
 kubectl logs -n jenkins statefulset/jenkins | grep -i casc
 ```
 
+Reverse proxy warning in Jenkins UI:
+
+```text
+It appears that your reverse proxy setup is broken
+```
+
+Jenkins must know the same public URL that the browser uses. Keep these values in `jenkins-values.yaml`:
+Jenkins must know the same public URL that the browser uses. Keep this value in `jenkins-values.yaml`:
+
+```yaml
+controller:
+  jenkinsUrl: "http://jenkins.192.168.0.110.nip.io"
+```
+
+Do not also set `unclassified.location.url` manually while `controller.JCasC.defaultConfig` is enabled. The Jenkins Helm chart already renders the location URL from `controller.jenkinsUrl`; setting both causes a JCasC conflict.
+
+JCasC obsolete `git` warning:
+
+```text
+'git' is obsolete, please use 'gitSource'
+```
+
+Use `gitSource` for the global shared library retriever.
+
 Re-apply changed values:
 
 ```bash
@@ -380,6 +450,20 @@ helm upgrade --install jenkins jenkins/jenkins \
   --values 4-Jenkins-Setup/jenkins-values.yaml \
   --timeout 10m \
   --wait
+```
+
+ServiceAccount ownership error:
+
+```text
+ServiceAccount "jenkins" exists and cannot be imported into the current release
+```
+
+This happens when the Jenkins ServiceAccount was created with `kubectl`, but the Helm chart also tries to create it. Keep this setting at the top level of `jenkins-values.yaml`:
+
+```yaml
+serviceAccount:
+  create: false
+  name: jenkins
 ```
 
 ---

@@ -327,8 +327,8 @@ But the first Jenkins design can work without Git tags. The release branch name 
 ## 10. Later Work
 
 - Write Jenkinsfiles for each pipeline type.
-- Add the shared library functions.
-- Add PVC for venv cache.
+- Add more shared library functions.
+- Use the shared library `ciPythonPodTemplate()` helper for CI agents.
 - Add GHCR image build and push logic.
 - Add config repo update or direct `kubectl apply` logic.
 - Add staging e2e pipeline.
