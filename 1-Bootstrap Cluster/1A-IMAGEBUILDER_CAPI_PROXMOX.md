@@ -1,6 +1,6 @@
 # CAPI + Proxmox + Image Builder — Setup Notes
 
-Based on [this video](https://www.youtube.com/watch?v=G72ylsRmspY). Goal: build a CAPI-compatible Proxmox VM template, then use Cluster API to provision K8s clusters on a homelab Proxmox cluster (4x Lenovo M710q thinkcentre).
+Based on [this video](https://www.youtube.com/watch?v=G72ylsRmspY). Goal: build a CAPI-compatible Proxmox VM template, then use Cluster API to provision K8s clusters on a two-node homelab Proxmox cluster.
 
 ## Architecture decision: where things run
 
@@ -14,6 +14,8 @@ Management cluster (kind) is kept temporary/disposable — it's only needed to b
 ---
 
 ## Step 1: Proxmox API user + token
+
+> In a Proxmox cluster, users and API tokens are Datacenter-wide resources. Create the user/token once from any node's web interface; Proxmox automatically makes it available across all cluster nodes.
 
 `Datacenter → Permissions → Users → Add`
 - Username: `capi`, Realm: `pve`
@@ -152,6 +154,10 @@ make build-proxmox-ubuntu-2404
 ```
 This process may take 15-60 minutes — Packer downloads the ISO, uploads it to Proxmox, creates the VM, installs the necessary packages (containerd, kubeadm, kubelet, kubectl) into it, and then converts the VM to a template.
 
+> **Required before provisioning — CPU type:** after the build completes, open the template in Proxmox and set `Hardware → Processors → Edit → CPU type` to `host`. Do this before CAPI clones any VMs. Otherwise, workloads such as recent Calico versions may fail because the default `kvm64` CPU exposes only x86-64-v1 instructions. See Issue 5 for the symptoms and recovery details.
+
+> **Multiple Proxmox nodes with local storage:** a template stored on `local`/`local-lvm` is available only on the node where it was built. If CAPI may place VMs on multiple nodes and you do not use shared storage, run the Image Builder command once per node, changing `PROXMOX_NODE` each time (for example, `pve1`, then `pve2`). Record the template VMID created on each node; the generated CAPI YAML must reference the matching `sourceNode` and `templateID`. Creating the template only on one node causes the clone failure documented after Step 8.
+
 ### raw vs qcow2 — why the format matters
 
 The end result is a VM template, not an image file you download (no `.qcow2`/`.raw` file lands in your hands — it just lives in Proxmox's storage). But the format still matters because it determines how the template's underlying disk is stored in Proxmox:
@@ -260,7 +266,7 @@ export PROXMOX_SOURCENODE="pve"
 export TEMPLATE_VMID="100"
  
 # --- Which Proxmox nodes VMs can land on ---
-export ALLOWED_NODES="[pve]"   # single node for now, will become [pve1,pve2,...] with 4 physical machines
+export ALLOWED_NODES="[pve1,pve2]"
  
 # --- SSH ---
 export VM_SSH_KEYS="$(cat ~/.ssh/id_ed25519.pub)"
@@ -305,6 +311,34 @@ CAPMOX's default cluster template also hardcodes pod subnet `192.168.0.0/16` in 
 ```bash
 sed -i 's/192.168.0.0\/16/10.244.0.0\/16/g' cluster.yaml
 ```
+
+### Give control-plane and worker VMs different RAM sizes
+
+Before `kubectl apply`, edit the generated YAML. It contains separate `ProxmoxMachineTemplate` resources for the control plane and workers, so each template can use a different `memoryMiB` value:
+
+```yaml
+# ProxmoxMachineTemplate: homelab-control-plane
+spec:
+  template:
+    spec:
+      memoryMiB: 4096
+---
+# ProxmoxMachineTemplate: homelab-worker-pve1
+spec:
+  template:
+    spec:
+      memoryMiB: 10240 # 10 GiB
+---
+# When using a node-specific worker template on pve2
+# ProxmoxMachineTemplate: homelab-worker-pve2
+spec:
+  template:
+    spec:
+      memoryMiB: 7168 # 7 GiB
+```
+
+The node-specific worker template pattern above is taken from [`cluster3.yaml`](../cluster3.yaml). When templates live on local storage, also ensure each machine template has the correct `sourceNode` and that node's `templateID`.
+
 ```bash
 kubectl apply -f cluster.yaml
 ```
@@ -313,6 +347,43 @@ Check status:
 clusterctl describe cluster proxmox-quickstart
 kubectl get machines
 ```
+
+<details>
+<summary><strong>Issue 7 — unable to create new VM: 500 can't clone VM to node (VM uses local storage)</strong></summary>
+
+Example errors:
+
+```text
+unable to create new vm: 500 can't clone VM to node 'pve2' (VM uses local storage)
+node 'pve2' not allowed for this action
+```
+
+**Cause:** the Image Builder template was created only on `pve1`, while CAPI tried to create a VM on `pve2`. A template on `local`/`local-lvm` storage cannot be cloned by another Proxmox node.
+
+**Fix:** build the template on every target node as described in Step 3 (or move it to shared storage). For local templates, use separate node-specific `ProxmoxMachineTemplate` resources and set each resource's `sourceNode` and `templateID` to the template that exists on that node. Then regenerate/reapply the cluster resources.
+
+</details>
+
+<details>
+<summary><strong>Issue 8 — Machine stays Unknown while waiting for its providerID Node</strong></summary>
+
+Sometimes Proxmox successfully clones a VM, but the VM does not finish booting or join Kubernetes. `clusterctl describe cluster` may show:
+
+```text
+Machine/homelab-workers-pve2-4jwgz-qw5th 1 0 0 1 Unknown ReadyUnknown
+* NodeHealthy: Waiting for a Node with spec.providerID
+  proxmox://c880f573-13d9-4e7a-84c1-1d5ccedd2874 to exist
+```
+
+Delete the stuck `Machine` object from the management cluster:
+
+```bash
+kubectl delete machine homelab-workers-pve2-4jwgz-qw5th -n default
+```
+
+The owning `MachineDeployment` notices that a replica is missing and CAPI automatically creates a replacement Machine/VM. Wait for the replacement to boot and join the cluster, then check it again with `clusterctl describe cluster` and `kubectl get machines`.
+
+</details>
 
  
 ## Step 9: Get kubeconfig and install CNI
@@ -443,4 +514,3 @@ kind delete cluster --name capi-bootstrap
 KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
 ```
 If this still reports the cluster/machines correctly after kind is gone, the pivot succeeded — `proxmox-quickstart` is now self-hosting its own CAPI and can provision/manage further clusters without needing kind again.
- 
