@@ -154,7 +154,7 @@ make build-proxmox-ubuntu-2404
 ```
 This process may take 15-60 minutes — Packer downloads the ISO, uploads it to Proxmox, creates the VM, installs the necessary packages (containerd, kubeadm, kubelet, kubectl) into it, and then converts the VM to a template.
 
-> **Required before provisioning — CPU type:** after the build completes, open the template in Proxmox and set `Hardware → Processors → Edit → CPU type` to `host`. Do this before CAPI clones any VMs. Otherwise, workloads such as recent Calico versions may fail because the default `kvm64` CPU exposes only x86-64-v1 instructions. See Issue 5 for the symptoms and recovery details.
+> **Required before provisioning — CPU type:** after the build completes, open the template in Proxmox and set `Hardware → Processors → Edit → CPU type` to `host`. Do this before CAPI clones any VMs. Otherwise, workloads such as recent Calico versions may fail because the default `kvm64` CPU exposes only x86-64-v1 instructions. See Issue 7 for the symptoms and recovery details.
 
 > **Multiple Proxmox nodes with local storage:** a template stored on `local`/`local-lvm` is available only on the node where it was built. If CAPI may place VMs on multiple nodes and you do not use shared storage, run the Image Builder command once per node, changing `PROXMOX_NODE` each time (for example, `pve1`, then `pve2`). Record the template VMID created on each node; the generated CAPI YAML must reference the matching `sourceNode` and `templateID`. Creating the template only on one node causes the clone failure documented after Step 8.
 
@@ -298,7 +298,7 @@ export CLUSTER_TOPOLOGY="true"
 ## Step 8: Generate and apply the workload cluster
  
 ```bash
-clusterctl generate cluster proxmox-quickstart \
+clusterctl generate cluster homelab \
   --infrastructure proxmox \
   --kubernetes-version v1.36.1 \
   --control-plane-machine-count 1 \
@@ -344,12 +344,12 @@ kubectl apply -f cluster.yaml
 ```
 Check status:
 ```bash
-clusterctl describe cluster proxmox-quickstart
+clusterctl describe cluster homelab
 kubectl get machines
 ```
 
 <details>
-<summary><strong>Issue 7 — unable to create new VM: 500 can't clone VM to node (VM uses local storage)</strong></summary>
+<summary><strong>Issue 5 — unable to create new VM: 500 can't clone VM to node (VM uses local storage)</strong></summary>
 
 Example errors:
 
@@ -365,7 +365,7 @@ node 'pve2' not allowed for this action
 </details>
 
 <details>
-<summary><strong>Issue 8 — Machine stays Unknown while waiting for its providerID Node</strong></summary>
+<summary><strong>Issue 6 — Machine stays Unknown while waiting for its providerID Node</strong></summary>
 
 Sometimes Proxmox successfully clones a VM, but the VM does not finish booting or join Kubernetes. `clusterctl describe cluster` may show:
 
@@ -386,19 +386,47 @@ The owning `MachineDeployment` notices that a replica is missing and CAPI automa
 </details>
 
  
-## Step 9: Get kubeconfig and install CNI
+## Step 9: Get kubeconfig and install Calico
  
 ```bash
-clusterctl get kubeconfig proxmox-quickstart > proxmox-quickstart.kubeconfig
+clusterctl get kubeconfig homelab > homelab.kubeconfig
 ```
  
 Nodes will show `NotReady` until a CNI is installed — this is expected, not an error:
 ```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get nodes
+KUBECONFIG=homelab.kubeconfig kubectl get nodes
 ```
- 
- <details>
-<summary><strong>Issue 5 — nodes stuck NotReady: Calico init containers crash with "v2 microarchitecture" error</strong></summary>
+
+### Install Calico
+
+The homelab LAN uses `192.168.0.0/24`, which overlaps with Calico's default `192.168.0.0/16` pod CIDR. Download the manifest and change its pod CIDR to the same non-overlapping range configured in `cluster.yaml` before applying it:
+
+```bash
+curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
+
+# Uncomment CALICO_IPV4POOL_CIDR
+sed -i 's|.*- name: CALICO_IPV4POOL_CIDR.*|            - name: CALICO_IPV4POOL_CIDR|' calico.yaml
+
+# Use the same pod CIDR configured in cluster.yaml
+sed -i 's|.*value: "192.168.0.0/16".*|              value: "10.244.0.0/16"|' calico.yaml
+
+kubectl --kubeconfig=homelab.kubeconfig apply -f calico.yaml
+```
+
+> Always use `--kubeconfig=homelab.kubeconfig` (or `KUBECONFIG=homelab.kubeconfig kubectl ...`) for anything targeting the workload cluster. A bare `kubectl` command still points at the kind management cluster.
+
+Wait, then verify:
+
+```bash
+KUBECONFIG=homelab.kubeconfig kubectl get pods -n kube-system
+KUBECONFIG=homelab.kubeconfig kubectl get nodes
+```
+
+Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
+
+<details>
+<summary><strong>Issue 7 — nodes stuck NotReady: Calico init containers crash with "v2 microarchitecture" error</strong></summary>
+
 After CNI install (see Step 9), `calico-node` pods stuck in `Init:Error`:
 ```bash
 kubectl logs calico-node-xxxxx -n kube-system -c upgrade-ipam
@@ -411,61 +439,31 @@ Quick test fix (per-VM, not persistent): stop the VM → `Hardware → Processor
  
 **Permanent fix:** fix the *template* itself, not each cloned VM (since every new node is cloned from it and would otherwise hit this every time):
 
-2. **Hardware → Processors → Edit → CPU type: `host`**
+**Hardware → Processors → Edit → CPU type: `host`**
 
 No `cpuType` field exists in CAPMOX's `ProxmoxMachineTemplate` schema (checked) — this has to be fixed at the template level in Proxmox, not via CAPI YAML.
  
-After fixing the template: `kubectl delete cluster proxmox-quickstart`, regenerate + reapply → new VMs come up with `host` CPU type from the start, Calico goes `Running` without manual intervention.
+After fixing the template: `kubectl delete cluster homelab`, regenerate + reapply → new VMs come up with `host` CPU type from the start, Calico goes `Running` without manual intervention.
  
 </details>
 ---
 
 <details>
-<summary><strong>Issue 6 — pods unreachable from the LAN: Calico's default pod CIDR collides with the home network</strong></summary>
+<summary><strong>Issue 8 — pods unreachable from the LAN: Calico's default pod CIDR collides with the home network</strong></summary>
+
 **Root cause:** Calico's official manifest (`calico.yaml`) defaults to pod CIDR `192.168.0.0/16`. The homelab LAN is `192.168.0.0/24` (Proxmox host: `192.168.0.100`), which falls *inside* that `/16` range.
  
 What goes wrong: a pod gets an IP like `192.168.204.135`. When that pod tries to reach `192.168.0.100` (the Proxmox host), Calico checks its pool — `192.168.0.100` falls inside `192.168.0.0/16`, so Calico assumes the destination is *another pod in the cluster* and skips IP masquerade (outgoing NAT). The packet leaves the VM with its raw pod-internal source IP (`192.168.204.135`). The Proxmox host receives it, tries to reply, but has no route back to `192.168.204.x` (that's the cluster's internal network, not the LAN) — reply gets dropped by the home router. Result: connections from pods to anything on the LAN hang and time out indefinitely, with no obvious error.
  
-**Fix — use a pod CIDR that can't overlap with the LAN** (e.g. `10.244.0.0/16`, well outside any typical home `192.168.x.x` range):
- 
-CAPMOX's default cluster template also hardcodes `192.168.0.0/16` in `cluster.yaml` — that part is already patched in Step 8, before `apply`. The Calico manifest needs the same fix separately:
- 
-Don't apply the upstream URL directly; download it first and patch the (commented-out, by default) `CALICO_IPV4POOL_CIDR` env var:
-```bash
-curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
- 
-# Uncomment the CALICO_IPV4POOL_CIDR name line
-sed -i 's|.*- name: CALICO_IPV4POOL_CIDR.*|            - name: CALICO_IPV4POOL_CIDR|' calico.yaml
- 
-# Set its value to the non-colliding range
-sed -i 's|.*value: "192.168.0.0/16".*|              value: "10.244.0.0/16"|' calico.yaml
- 
-kubectl --kubeconfig=proxmox-quickstart.kubeconfig apply -f calico.yaml
-```
+**Fix:** use a pod CIDR that cannot overlap with the LAN, such as `10.244.0.0/16`. Both `cluster.yaml` and the Calico manifest must use the same value. Step 8 patches `cluster.yaml`; the Calico installation commands above patch `calico.yaml` before it is applied.
  
 **Takeaway:** always check the LAN subnet against the CNI's default pod CIDR before installing — this only surfaces as a silent timeout, not a clear error, so it's easy to lose time on.
  
 </details>
- 
----
-Install Calico (with the CIDR fix applied, per Issue 6 above):
-```bash
-kubectl --kubeconfig=proxmox-quickstart.kubeconfig apply -f calico.yaml
-```
-
-
-> Always use `--kubeconfig=proxmox-quickstart.kubeconfig` (or `KUBECONFIG=... kubectl ...`) for anything targeting the workload cluster. A bare `kubectl` command still points at the kind management cluster.
- 
-Wait, then verify:
-```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get pods -n kube-system
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get nodes
-```
-Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
 
 ## Step 10: Pivot — move CAPI from kind into the real cluster
  
-Once the workload cluster (`proxmox-quickstart`) is healthy (CNI installed, nodes `Ready`), CAPI itself can be migrated off the temporary kind cluster and into the real one, so kind can be deleted and the cluster becomes self-managing.
+Once the workload cluster (`homelab`) is healthy (CNI installed, nodes `Ready`), CAPI itself can be migrated off the temporary kind cluster and into the real one, so kind can be deleted and the cluster becomes self-managing.
  
 ### Step 10.1: Re-set env vars (fresh terminal)
  
@@ -483,17 +481,17 @@ export CLUSTER_TOPOLOGY="true"
 `clusterctl move` only *transfers* CAPI objects — it doesn't install CAPI itself on the target. The target needs its own CAPI install first:
  
 ```bash
-clusterctl init --kubeconfig=proxmox-quickstart.kubeconfig --infrastructure proxmox --ipam in-cluster
+clusterctl init --kubeconfig=homelab.kubeconfig --infrastructure proxmox --ipam in-cluster
  
 # wait until capi + capmox pods are 1/1
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get pods -A -w
+KUBECONFIG=homelab.kubeconfig kubectl get pods -A -w
 ```
  
 ### Step 10.3: Move
  
 Run from the context still pointing at the **source** (kind):
 ```bash
-clusterctl move --to-kubeconfig=proxmox-quickstart.kubeconfig
+clusterctl move --to-kubeconfig=homelab.kubeconfig
 ```
  
 ### Step 10.4: Verify the pivot
@@ -503,14 +501,14 @@ clusterctl move --to-kubeconfig=proxmox-quickstart.kubeconfig
 kubectl get clusters,machines,proxmoxclusters -A
 ```
  
-**2. Target (proxmox-quickstart) should now hold the objects:**
+**2. Target (`homelab`) should now hold the objects:**
 ```bash
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
+KUBECONFIG=homelab.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
 ```
  
 **3. Ultimate test — delete kind, confirm nothing breaks:**
 ```bash
 kind delete cluster --name capi-bootstrap
-KUBECONFIG=proxmox-quickstart.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
+KUBECONFIG=homelab.kubeconfig kubectl get clusters,machines,proxmoxclusters -A
 ```
-If this still reports the cluster/machines correctly after kind is gone, the pivot succeeded — `proxmox-quickstart` is now self-hosting its own CAPI and can provision/manage further clusters without needing kind again.
+If this still reports the cluster/machines correctly after kind is gone, the pivot succeeded — `homelab` is now self-hosting its own CAPI and can provision/manage further clusters without needing kind again.
