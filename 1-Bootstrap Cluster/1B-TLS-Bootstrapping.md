@@ -25,7 +25,7 @@ Most `kubectl` commands only talk to the API server:
 
 There is an important verification difference between the last two paths:
 
-- For `kubectl logs`/`exec`, the API server is the TLS client connecting to the kubelet. By default, the API server does **not** verify the kubelet's serving certificate unless it is configured with `--kubelet-certificate-authority`. This is why these commands can work even while the kubelet serving CSR is still `Pending`.
+- For `kubectl logs`/`exec`, the API server is the TLS client connecting to the kubelet. By default, the API server does **not** verify the kubelet's serving certificate unless it is configured with `--kubelet-certificate-authority`. This is why these commands can work even while the kubelet serving CSR is still `Pending`. This behavior is described in the official Kubernetes documentation under [API server to kubelet communication](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/#api-server-to-kubelet).
 - Metrics Server makes its own connection to the kubelet and verifies the presented serving certificate. It selects an address from the Node object using `--kubelet-preferred-address-types`. In this cluster it connects to an `InternalIP`, so that exact IP must be present in the certificate's SANs and the certificate must chain to a trusted CA. Otherwise it reports `doesn't contain any IP SANs`.
 
 Therefore, working `kubectl logs`/`exec` is not proof that the kubelet serving certificate is correct. It can mean that the API server is accepting the connection without verifying that certificate, while Metrics Server correctly rejects the same certificate.
