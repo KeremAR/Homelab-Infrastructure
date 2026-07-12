@@ -22,7 +22,7 @@ Create the same secret in `production` before deploying production.
 ## 4. Deploy staging
 
 ```bash
-kubectl apply -R -f 3-DeployWithManifests/staging
+kubectl apply -R -f 3-Kubectl-Deploy/staging
 kubectl get pods -n staging -w
 ```
 

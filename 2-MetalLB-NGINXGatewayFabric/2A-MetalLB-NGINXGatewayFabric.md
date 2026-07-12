@@ -44,51 +44,57 @@ kubectl get l2advertisements.metallb.io -n metallb-system
 
 ## NGINX Gateway Fabric (NGF)
 
-<details>
-<summary><strong>Issue 8 — 403 denied pulling the chart from ghcr.io (OCI registry)</strong></summary>
+### Install
 
-Symptom, on the documented install command:
-```
-Error: INSTALLATION FAILED: GET "https://ghcr.io/v2/nginx/charts/nginx-gateway-fabric/tags/list":
-GET "https://ghcr.io/token?scope=repository%3Anginx%2Fcharts%2Fnginx-gateway-fabric%3Apull&service=ghcr.io":
-response status code 403: denied: denied
-```
+The NGF Helm chart is pulled from the GHCR OCI registry. Authenticate before installation, even though the chart is public, to avoid GHCR's intermittent anonymous-pull `403 denied` response:
 
-Happens with or without `--version` pinned — not a version-specific issue. This is a **known, reported bug** in NGINX Gateway Fabric's own repo ([nginx/nginx-gateway-fabric#4282](https://github.com/nginx/nginx-gateway-fabric/issues/4282)) and has been hit independently by ArgoCD and Flux users pulling the same public chart — ghcr.io's anonymous/public pull occasionally 403s even though the repo is public and pullable directly via browser/`gh`.
-
-**Fix — authenticate to ghcr.io with a GitHub account before pulling, even though the chart is public:**
 ```bash
 sudo apt install gh -y
 gh auth login
-gh auth token | helm registry login ghcr.io --username "$(gh api user --jq .login)" --password-stdin
+gh auth token | helm registry login ghcr.io \
+  --username "$(gh api user --jq .login)" \
+  --password-stdin
 ```
-Do this **before** the `helm install` OCI command below — not after, and not only on failure. Once logged in, the OCI pull works.
-
-**Alternative (no GitHub login needed at all):** clone the chart from source and install from the local directory instead of pulling from ghcr.io:
-```bash
-git clone --depth 1 --branch v2.6.5 https://github.com/nginx/nginx-gateway-fabric.git
-cd nginx-gateway-fabric/charts/nginx-gateway-fabric
-helm install ngf . --namespace nginx-gateway --create-namespace --wait
-```
-This bypasses the OCI registry entirely.
-
-</details>
-
-### Install
 
 Gateway API CRDs first (NGINX's own pinned kustomize reference, not the generic `kubernetes-sigs/gateway-api` release — keeps the CRD version in lockstep with the NGF version being installed):
 ```bash
 kubectl kustomize "https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=v2.6.5" | kubectl apply -f -
 ```
 
-Then the chart itself (after the `gh auth` steps above, if hitting Issue 8):
+Then install the chart:
 ```bash
-
 helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
   --namespace nginx-gateway \
   --create-namespace \
   --wait
 ```
+
+<details>
+<summary><strong>Issue 8 — 403 denied pulling the chart from ghcr.io (OCI registry)</strong></summary>
+
+Symptom from the Helm install command:
+
+```text
+Error: INSTALLATION FAILED: GET "https://ghcr.io/v2/nginx/charts/nginx-gateway-fabric/tags/list":
+GET "https://ghcr.io/token?scope=repository%3Anginx%2Fcharts%2Fnginx-gateway-fabric%3Apull&service=ghcr.io":
+response status code 403: denied: denied
+```
+
+This can happen with or without a pinned `--version`, so it is not version-specific. It is a known, reported problem in the NGINX Gateway Fabric repository ([nginx/nginx-gateway-fabric#4282](https://github.com/nginx/nginx-gateway-fabric/issues/4282)): GHCR anonymous pulls can return `403` even though the chart is public.
+
+**Fix:** complete the `gh auth login` and `helm registry login` installation steps above, verify that both commands succeed, and rerun `helm install`.
+
+**Alternative without GitHub authentication:** clone the chart source and install it from the local directory instead of pulling it from GHCR:
+
+```bash
+git clone --depth 1 --branch v2.6.5 https://github.com/nginx/nginx-gateway-fabric.git
+cd nginx-gateway-fabric/charts/nginx-gateway-fabric
+helm install ngf . --namespace nginx-gateway --create-namespace --wait
+```
+
+This bypasses the OCI registry entirely.
+
+</details>
 
 **Used all chart defaults here** — no `--set` flags:
 - `gatewayClassName` defaults to `nginx` (didn't override to a custom name)

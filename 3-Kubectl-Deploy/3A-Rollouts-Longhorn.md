@@ -87,7 +87,7 @@ Expected: Longhorn creates the default StorageClass.
 Expose the Longhorn UI through NGF:
 
 ```bash
-kubectl apply -f 3-DeployWithManifests/longhorn-httproute.yaml
+kubectl apply -f 3-Kubectl-Deploy/longhorn-httproute.yaml
 ```
 
 UI:
@@ -111,7 +111,7 @@ kubectl wait --for=condition=ready pod \
   -n argo-rollouts \
   --timeout=180s
 
-kubectl apply -f 3-DeployWithManifests/argo-rollouts-rbac.yaml
+kubectl apply -f 3-Kubectl-Deploy/argo-rollouts-rbac.yaml
 ```
 
 Optional CLI plugin:
