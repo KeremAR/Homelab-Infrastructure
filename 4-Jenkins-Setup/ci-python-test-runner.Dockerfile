@@ -6,12 +6,11 @@ LABEL org.opencontainers.image.description="Python CI runner for Jenkins linting
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
-ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /workspace
 
 # Build tools are kept in the image so service dependencies can be installed
-# quickly into the PVC-backed venv cache during Jenkins runs.
+# quickly using the PVC-backed pip cache during Jenkins runs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     build-essential \
@@ -36,6 +35,6 @@ RUN python -m pip install --upgrade pip setuptools wheel \
       pytest-cov==6.0.0 \
       ruff==0.9.3
 
-RUN mkdir -p /cache/venvs /workspace
+RUN mkdir -p /cache/pip /workspace
 
 CMD ["sleep", "infinity"]
