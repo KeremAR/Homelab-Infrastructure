@@ -17,7 +17,7 @@ Prerequisites from earlier steps:
 
 PostgreSQL StatefulSets need a default `StorageClass`. Old K3s had `local-path` by default; this CAPI cluster does not. Longhorn is used here.
 
-On the worker node, prepare the storage path:
+On all three worker nodes, prepare the storage path and install the prerequisites:
 
 ```bash
 sudo mkdir -p /mnt/longhorn-storage
@@ -32,6 +32,20 @@ sudo apt install -y open-iscsi nfs-common util-linux e2fsprogs xfsprogs
 sudo systemctl enable --now iscsid
 ```
 
+Label the three worker nodes before installing Longhorn. Replace the example names below with the current names shown by `kubectl get nodes` if a CAPI Machine has been recreated:
+
+```bash
+kubectl get nodes
+
+kubectl label node \
+  homelab-workers-pve1-qn44f-mdvk6 \
+  homelab-workers-pve2-4jwgz-wvsmc \
+  homelab-workers-pve2-4jwgz-2tl55 \
+  node.longhorn.io/create-default-disk=true
+```
+
+Do not add this label to the control-plane node.
+
 Install Longhorn:
 
 ```bash
@@ -42,9 +56,23 @@ cd longhorn
 Edit `deploy/longhorn.yaml`, find the `longhorn-default-setting` ConfigMap, and set:
 
 ```yaml
-default-data-path: /mnt/longhorn-storage/
-default-replica-count: 1
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: longhorn-default-setting
+  namespace: longhorn-system
+data:
+  default-setting.yaml: |-
+    create-default-disk-labeled-nodes: true
+    default-data-path: /mnt/longhorn-storage/
+    default-replica-count: 3
 ```
+
+`create-default-disk-labeled-nodes` defaults to `false`. When it is left disabled, Longhorn does not use the label as a filter and registers `default-data-path` as a Longhorn disk on every newly detected eligible node. Setting it to `true` makes Longhorn register the default storage path only on nodes labeled `node.longhorn.io/create-default-disk=true`; this keeps Longhorn replica storage on the three workers and off the control-plane node.
+
+Here, “create default disk” means registering `/mnt/longhorn-storage/` as a storage location in Longhorn—it does not create a physical disk, partition, or filesystem. The directory and any intended disk mount must already be prepared on every labeled worker.
+
+`default-replica-count: 3` means that each newly created Longhorn volume has three data copies, which Longhorn distributes across the available worker storage nodes.
 
 Then apply:
 
@@ -95,4 +123,3 @@ sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
 ```
 
 ---
-
