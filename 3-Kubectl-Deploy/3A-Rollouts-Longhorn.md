@@ -68,7 +68,7 @@ data:
     default-replica-count: 3
 ```
 
-`create-default-disk-labeled-nodes` defaults to `false`. When it is left disabled, Longhorn does not use the label as a filter and registers `default-data-path` as a Longhorn disk on every newly detected eligible node. Setting it to `true` makes Longhorn register the default storage path only on nodes labeled `node.longhorn.io/create-default-disk=true`; this keeps Longhorn replica storage on the three workers and off the control-plane node.
+`create-default-disk-labeled-nodes` defaults to `false`. When it is left disabled, Longhorn does not use the label as a filter and registers `default-data-path` as a Longhorn disk on every newly detected eligible node. Setting it to `true` makes Longhorn register the default storage path only on nodes labeled `node.longhorn.io/create-default-disk=true`; this keeps Longhorn replica storage on the three workers and off the control-plane node. This behavior is described in the official Longhorn documentation under [Configuring Defaults for Nodes and Disks](https://longhorn.io/docs/1.12.0/nodes-and-volumes/nodes/default-disk-and-node-config/).
 
 Here, “create default disk” means registering `/mnt/longhorn-storage/` as a storage location in Longhorn—it does not create a physical disk, partition, or filesystem. The directory and any intended disk mount must already be prepared on every labeled worker.
 
