@@ -73,6 +73,16 @@ longhorn
 
 No manual PV is needed for Jenkins in this setup. Longhorn dynamically creates PVs when the Jenkins PVCs are created.
 
+Jenkins uses a dedicated single-replica Longhorn StorageClass:
+
+```text
+longhorn-jenkins-single
+```
+
+Reason: Jenkins cache volumes are not critical application data. With Longhorn
+replica count `3`, the 28Gi Jenkins PVC set needs roughly 84Gi of Longhorn
+replica capacity. Single replica keeps disk usage reasonable for the homelab.
+
 ---
 
 ## 3. Prepare GitHub Token
@@ -128,9 +138,10 @@ This is intentionally not `cluster-admin`. The first phase only needs Jenkins to
 
 ---
 
-## 5. Create PVCs
+## 5. Create Jenkins StorageClass And PVCs
 
 ```bash
+kubectl apply -f 4-Jenkins-Setup/jenkins-storageclass.yaml
 kubectl apply -f 4-Jenkins-Setup/jenkins-pvc.yaml
 kubectl get pvc -n jenkins
 ```
@@ -139,14 +150,15 @@ PVCs:
 
 ```text
 jenkins-home-pvc
+jenkins-npm-cache-pvc
 jenkins-trivy-cache-pvc
 jenkins-venv-cache-pvc
 ```
 
-These PVCs use Longhorn:
+These PVCs use Longhorn with one replica:
 
 ```yaml
-storageClassName: longhorn
+storageClassName: longhorn-jenkins-single
 ```
 
 Old setup note: the previous K3s install created manual `hostPath` PVs because it depended on `local-path` and a fixed node name, `k3s-worker`. This cluster should not use that pattern.
@@ -329,9 +341,11 @@ The Kubernetes agent pod template is intentionally not stored in `jenkins-values
 ```text
 SharedLibrary/src/com/company/jenkins/Utils.groovy
 SharedLibrary/vars/ciPythonPodTemplate.groovy
+SharedLibrary/resources/com/company/jenkins/pods/lint-pod.yaml
 ```
 
 That keeps pipeline runtime details versioned with pipeline code instead of Jenkins installation config.
+The pod template is loaded with `libraryResource`, so changing the pod YAML requires committing and pushing the `SharedLibrary` repo.
 
 Because `SharedLibrary` is a Git submodule, Jenkins will not read the local working tree directly. Commit and push the shared library repo before expecting Jenkins to use a changed helper:
 
@@ -376,12 +390,15 @@ Kept or adapted:
 - Multibranch Pipeline
 - Shared Library
 - Kubernetes dynamic agents, with pod template supplied by the shared library
+- frontend linting through the `node` container
+- Dockerfile linting through the `hadolint` container
 - Trivy cache
 
 Added:
 
 - Longhorn-backed PVCs
 - venv cache PVC
+- npm cache PVC
 - narrower namespace RBAC
 - English Jenkins UI locale
 - declarative Secret YAML with `.env` + `envsubst`

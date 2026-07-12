@@ -6,6 +6,7 @@ controller:
 
   serviceType: ClusterIP
   jenkinsUrl: "http://jenkins.192.168.0.110.nip.io"
+  enableRawHtmlMarkupFormatter: true
 
   installPlugins:
     - configuration-as-code
@@ -23,6 +24,8 @@ controller:
     - timestamper
     - ws-cleanup
     - locale
+    - antisamy-markup-formatter
+    - blueocean
 
   containerEnv:
     - name: GITHUB_USERNAME

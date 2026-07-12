@@ -9,7 +9,20 @@ spec:
   resources:
     requests:
       storage: 8Gi
-  storageClassName: longhorn
+  storageClassName: longhorn-jenkins-single
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-npm-cache-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn-jenkins-single
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -22,7 +35,7 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: longhorn
+  storageClassName: longhorn-jenkins-single
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -35,4 +48,4 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  storageClassName: longhorn
+  storageClassName: longhorn-jenkins-single
