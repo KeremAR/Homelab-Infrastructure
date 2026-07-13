@@ -25,6 +25,7 @@ controller:
     - ws-cleanup
     - locale
     - antisamy-markup-formatter
+    - lockable-resources
     - blueocean
 
   containerEnv:
