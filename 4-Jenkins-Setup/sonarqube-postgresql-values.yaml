@@ -1,0 +1,27 @@
+architecture: standalone
+
+auth:
+  username: sonarqube
+  database: sonarqube
+  existingSecret: sonarqube-db-secret
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+
+primary:
+  persistence:
+    enabled: true
+    storageClass: longhorn-jenkins-single
+    size: 5Gi
+
+  resourcesPreset: none
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+volumePermissions:
+  enabled: true

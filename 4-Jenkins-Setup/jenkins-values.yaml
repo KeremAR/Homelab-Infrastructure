@@ -26,6 +26,7 @@ controller:
     - locale
     - antisamy-markup-formatter
     - lockable-resources
+    - sonar
     - blueocean
 
   containerEnv:
@@ -39,6 +40,11 @@ controller:
         secretKeyRef:
           name: jenkins-github-secret
           key: github-token
+    - name: SONAR_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-app-secrets
+          key: sonar-token
 
   JCasC:
     defaultConfig: true
@@ -58,6 +64,16 @@ controller:
             systemLocale: "en"
             ignoreAcceptLanguage: true
 
+        tool:
+          sonarRunnerInstallation:
+            installations:
+              - name: "SonarQube Scanner"
+                properties:
+                  - installSource:
+                      installers:
+                        - sonarRunnerInstaller:
+                            id: "7.3.0.5189"
+
         unclassified:
           globalLibraries:
             libraries:
@@ -69,6 +85,12 @@ controller:
                       gitSource:
                         remote: "https://github.com/KeremAR/Homelab-SharedLibrary.git"
                         credentialsId: "github-token"
+          sonarglobalconfiguration:
+            buildWrapperEnabled: true
+            installations:
+              - name: "sonarqube"
+                serverUrl: "http://sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+                credentialsId: "sonarqube-token"
 
         credentials:
           system:
@@ -80,6 +102,11 @@ controller:
                       username: "${GITHUB_USERNAME}"
                       password: "${GITHUB_TOKEN}"
                       description: "GitHub token for repo scan, checkout, and later GHCR push"
+                  - string:
+                      scope: GLOBAL
+                      id: "sonarqube-token"
+                      secret: "${SONAR_TOKEN}"
+                      description: "SonarQube access token"
 
         jobs:
           - script: >

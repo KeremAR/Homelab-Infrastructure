@@ -8,7 +8,8 @@ Goal: install Jenkins on the Kubernetes cluster with Helm and JCasC. This first 
 - App CI is created as a Multibranch Pipeline.
 - The pipeline agent pod template lives in the shared library.
 - The agent uses PVC-backed caches for Trivy and Python virtualenvs.
-- SonarQube, ArgoCD, GitOps deploy, Docker image build, and production deploy are not included yet.
+- SonarQube integration uses a token generated from SonarQube after it is installed.
+- ArgoCD, GitOps deploy, Docker image build, and production deploy are not included yet.
 
 Current Jenkins URL after install:
 
@@ -34,6 +35,12 @@ This folder contains the Jenkins install manifests:
 ```
 
 `jenkins-values.yaml` is used by the Jenkins Helm chart. The other YAML files are applied with `kubectl`.
+
+SonarQube has its own install notes in:
+
+```text
+4-Jenkins-Setup/sonarqube.md
+```
 
 ---
 
@@ -107,6 +114,8 @@ JENKINS_ADMIN_USER=admin
 JENKINS_ADMIN_PASSWORD=change-me
 GITHUB_USERNAME=KeremAR
 GITHUB_TOKEN=ghp_your_token_here
+# Fill this after SonarQube is installed and a token is generated.
+SONAR_TOKEN=squ_your_token_here
 EOF
 ```
 
@@ -198,6 +207,7 @@ Expected secrets:
 ```text
 jenkins-admin-secret
 jenkins-github-secret
+jenkins-app-secrets
 ghcr-creds
 ```
 
@@ -206,6 +216,10 @@ If `envsubst` is missing on Debian/Ubuntu:
 ```bash
 sudo apt install -y gettext-base
 ```
+
+If SonarQube is not installed yet, `SONAR_TOKEN` can stay as a placeholder.
+Before upgrading Jenkins with SonarQube enabled, generate a real token in the
+SonarQube UI and re-apply `jenkins-secrets.yaml`.
 
 ---
 
@@ -302,6 +316,9 @@ In Jenkins UI, check:
 - `homelab-shared-library` exists under global libraries.
 - `homelab-app-ci` Multibranch Pipeline exists.
 - GitHub credentials exist as `github-token`.
+- SonarQube credentials exist as `sonarqube-token`.
+- SonarQube scanner tool exists as `SonarQube Scanner`.
+- SonarQube server exists as `sonarqube`.
 - Kubernetes cloud exists.
 
 From CLI:

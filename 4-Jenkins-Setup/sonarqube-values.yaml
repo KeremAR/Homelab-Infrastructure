@@ -1,0 +1,68 @@
+community:
+  enabled: true
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  externalPort: 9000
+  internalPort: 9000
+
+ingress:
+  enabled: false
+
+httproute:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+    ephemeral-storage: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+    ephemeral-storage: 5Gi
+
+persistence:
+  enabled: true
+  storageClass: longhorn-jenkins-single
+  accessMode: ReadWriteOnce
+  size: 5Gi
+
+jdbcOverwrite:
+  enabled: true
+  jdbcUrl: "jdbc:postgresql://sonarqube-postgresql.sonarqube.svc.cluster.local:5432/sonarqube"
+  jdbcUsername: "sonarqube"
+  jdbcSecretName: "sonarqube-db-secret"
+  jdbcSecretPasswordKey: "password"
+
+monitoringPasscodeSecretName: sonarqube-monitoring-secret
+monitoringPasscodeSecretKey: monitoring-passcode
+
+initSysctl:
+  enabled: true
+
+initFs:
+  enabled: true
+
+readinessProbe:
+  initialDelaySeconds: 90
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+
+livenessProbe:
+  initialDelaySeconds: 180
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+
+startupProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 10
+  failureThreshold: 60
+
+tests:
+  enabled: false
