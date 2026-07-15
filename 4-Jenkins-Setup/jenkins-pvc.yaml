@@ -14,6 +14,19 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: jenkins-tools-cache-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: longhorn-jenkins-single
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: jenkins-npm-cache-pvc
   namespace: jenkins
 spec:

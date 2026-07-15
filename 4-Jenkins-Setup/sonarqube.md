@@ -339,6 +339,19 @@ def scannerHome = tool 'SonarQube Scanner'
 sh "${scannerHome}/bin/sonar-scanner"
 ```
 
+The Jenkins agent pod mounts `jenkins-tools-cache-pvc` at:
+
+```text
+/home/jenkins/agent/tools
+```
+
+That path is the agent tools directory used by Jenkins tool installers. With the
+PVC mounted there, the SonarQube Scanner download can survive new ephemeral
+Kubernetes agent pods.
+
+This cache only stores Jenkins-side tool binaries. It is separate from the
+SonarQube server and from SonarQube's PostgreSQL database.
+
 So the Jenkins-side flow is:
 
 ```text

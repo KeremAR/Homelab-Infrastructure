@@ -159,6 +159,7 @@ PVCs:
 
 ```text
 jenkins-home-pvc
+jenkins-tools-cache-pvc
 jenkins-npm-cache-pvc
 jenkins-trivy-cache-pvc
 jenkins-venv-cache-pvc
@@ -169,6 +170,15 @@ These PVCs use Longhorn with one replica:
 ```yaml
 storageClassName: longhorn-jenkins-single
 ```
+
+`jenkins-tools-cache-pvc` is mounted into Jenkins agent pods at:
+
+```text
+/home/jenkins/agent/tools
+```
+
+Jenkins tool installers, such as the SonarQube Scanner installer, can reuse this
+path across new ephemeral Kubernetes agent pods.
 
 Old setup note: the previous K3s install created manual `hostPath` PVs because it depended on `local-path` and a fixed node name, `k3s-worker`. This cluster should not use that pattern.
 
