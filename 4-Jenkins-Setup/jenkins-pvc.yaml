@@ -21,7 +21,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 2Gi
+      storage: 1Gi
   storageClassName: longhorn-jenkins-single
 ---
 apiVersion: v1
@@ -34,7 +34,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 2Gi
   storageClassName: longhorn-jenkins-single
 ---
 apiVersion: v1
@@ -66,6 +66,45 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: jenkins-docker-cache-user-service-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOncePod
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn-jenkins-single
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-docker-cache-todo-service-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOncePod
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn-jenkins-single
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-docker-cache-frontend-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOncePod
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn-jenkins-single
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: jenkins-venv-cache-pvc
   namespace: jenkins
 spec:
@@ -73,5 +112,5 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 2Gi
   storageClassName: longhorn-jenkins-single

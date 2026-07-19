@@ -120,6 +120,8 @@ controller:
                     scanCredentialsId('github-token')
                     repoOwner('KeremAR')
                     repository('Homelab-App')
+                    includes('release/* PR-*')
+                    excludes('feature/*')
                     buildOriginBranch(true)
                     buildOriginBranchWithPR(false)
                     buildOriginPRMerge(true)
