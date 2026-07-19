@@ -64,11 +64,15 @@ spec:
         prometheus.io/port: "8002"
         prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: todo-service-config-reloader
+      securityContext:
+        fsGroup: 65534
+        fsGroupChangePolicy: OnRootMismatch
       imagePullSecrets:
         - name: github-registry-secret
       containers:
       - name: todo-service
-        image: ghcr.io/keremar/todo-app-todo-service:latest
+        image: ghcr.io/keremar/todo-app-todo-service:v2
         imagePullPolicy: Always
         ports:
         - containerPort: 8002
@@ -79,6 +83,8 @@ spec:
           value: "http://user-service:8001"
         - name: DATABASE_URL
           value: "postgresql://todoservice:todopass@todo-db:5432/tododb"
+        - name: RUNTIME_CONFIG_PATH
+          value: "/etc/todo-service/runtime-config/runtime-config.json"
         # OpenTelemetry Configuration
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://alloy.observability.svc.cluster.local:4318"
@@ -94,6 +100,10 @@ spec:
           value: "none"
         - name: OTEL_LOGS_EXPORTER
           value: "none"
+        volumeMounts:
+        - name: runtime-config
+          mountPath: /etc/todo-service/runtime-config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /health
@@ -114,4 +124,54 @@ spec:
           requests:
             cpu: 100m
             memory: 128Mi
+      - name: config-reloader
+        image: ghcr.io/kiwigrid/k8s-sidecar:2.7.3
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: METHOD
+          value: WATCH
+        - name: LABEL
+          value: todo-service-hot-reload
+        - name: LABEL_VALUE
+          value: "true"
+        - name: RESOURCE
+          value: configmap
+        - name: NAMESPACE
+          value: staging
+        - name: FOLDER
+          value: /etc/todo-service/runtime-config
+        - name: REQ_URL
+          value: http://127.0.0.1:8002/admin/reload-config
+        - name: REQ_METHOD
+          value: POST
+        - name: REQ_RETRY_CONNECT
+          value: "10"
+        ports:
+        - name: sidecar-health
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: sidecar-health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: sidecar-health
+          initialDelaySeconds: 35
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        volumeMounts:
+        - name: runtime-config
+          mountPath: /etc/todo-service/runtime-config
+      volumes:
+      - name: runtime-config
+        emptyDir: {}
 

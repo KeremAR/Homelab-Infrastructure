@@ -1,0 +1,20 @@
+---
+# Runtime settings watched by the k8s-sidecar container.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-service-runtime-config
+  namespace: staging
+  labels:
+    app: todo-service
+    todo-service-hot-reload: "true"
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: todo-service
+    app.kubernetes.io/managed-by: plain-manifests
+data:
+  runtime-config.json: |
+    {
+      "message": "Staging config version 1 is active",
+      "version": 2
+    }

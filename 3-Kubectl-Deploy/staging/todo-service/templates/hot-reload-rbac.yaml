@@ -1,0 +1,45 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: todo-service-config-reloader
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: config-reloader
+    app.kubernetes.io/managed-by: plain-manifests
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: todo-service-config-reloader
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: config-reloader
+    app.kubernetes.io/managed-by: plain-manifests
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: todo-service-config-reloader
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: todo-service
+    app.kubernetes.io/instance: staging-todo-service
+    app.kubernetes.io/component: config-reloader
+    app.kubernetes.io/managed-by: plain-manifests
+subjects:
+- kind: ServiceAccount
+  name: todo-service-config-reloader
+  namespace: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: todo-service-config-reloader

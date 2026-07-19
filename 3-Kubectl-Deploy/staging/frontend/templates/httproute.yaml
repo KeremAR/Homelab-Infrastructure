@@ -46,6 +46,13 @@ spec:
       port: 8002
   - matches:
     - path:
+        type: Exact
+        value: /config
+    backendRefs:
+    - name: todo-service
+      port: 8002
+  - matches:
+    - path:
         type: PathPrefix
         value: /admin
     backendRefs:
