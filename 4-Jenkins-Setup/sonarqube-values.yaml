@@ -21,7 +21,7 @@ resources:
     ephemeral-storage: 1Gi
   limits:
     cpu: 1000m
-    memory: 2Gi
+    memory: 3Gi
     ephemeral-storage: 5Gi
 
 persistence:

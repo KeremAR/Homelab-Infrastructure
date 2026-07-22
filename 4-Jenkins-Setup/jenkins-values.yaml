@@ -27,6 +27,8 @@ controller:
     - antisamy-markup-formatter
     - lockable-resources
     - sonar
+    - credentials-binding
+    - dark-theme
     - blueocean
 
   containerEnv:
@@ -45,6 +47,12 @@ controller:
         secretKeyRef:
           name: jenkins-app-secrets
           key: sonar-token
+    - name: DEPENDENCY_TRACK_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-app-secrets
+          key: dependency-track-api-key
+          optional: true
 
   JCasC:
     defaultConfig: true
@@ -60,6 +68,9 @@ controller:
                 jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
 
         appearance:
+          themeManager:
+            disableUserThemes: true
+            theme: "darkSystem"
           locale:
             systemLocale: "en"
             ignoreAcceptLanguage: true
@@ -107,6 +118,11 @@ controller:
                       id: "sonarqube-token"
                       secret: "${SONAR_TOKEN}"
                       description: "SonarQube access token"
+                  - string:
+                      scope: GLOBAL
+                      id: "dependency-track-api-key"
+                      secret: "${DEPENDENCY_TRACK_API_KEY}"
+                      description: "Dependency-Track API key for SBOM upload"
 
         jobs:
           - script: >

@@ -1,0 +1,63 @@
+common:
+  image:
+    registry: docker.io
+  serviceAccount:
+    create: true
+    automount: false
+
+apiServer:
+  deploymentType: StatefulSet
+  replicaCount: 1
+
+  persistentVolume:
+    enabled: true
+    className: longhorn-jenkins-single
+    size: 5Gi
+
+  extraEnv:
+    - name: ALPINE_DATABASE_MODE
+      value: external
+    - name: ALPINE_DATABASE_URL
+      value: "jdbc:postgresql://dtrack-postgresql.dependency-track.svc.cluster.local:5432/dtrack"
+    - name: ALPINE_DATABASE_DRIVER
+      value: "org.postgresql.Driver"
+    - name: ALPINE_DATABASE_USERNAME
+      value: dtrack
+    - name: ALPINE_DATABASE_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: dtrack-db-secret
+          key: password
+    - name: ALPINE_DATABASE_POOL_ENABLED
+      value: "true"
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+
+  probes:
+    startup:
+      path: "/health/started"
+      failureThreshold: 60
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+
+frontend:
+  replicaCount: 1
+  apiBaseUrl: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+ingress:
+  enabled: false
+
+httpRoute:
+  enabled: false
