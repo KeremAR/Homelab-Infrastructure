@@ -184,10 +184,3 @@ Generate Image SBOM
   -> sbom-reports/*.cyclonedx.json
   -> optional upload to Dependency-Track
 ```
-
-Sources:
-
-- Official Kubernetes install docs: https://docs.dependencytrack.org/getting-started/deploy-kubernetes/
-- Official configuration docs: https://docs.dependencytrack.org/getting-started/configuration/
-- Official database support docs: https://docs.dependencytrack.org/getting-started/database-support/
-- Helm chart package: https://artifacthub.io/packages/helm/dependencytrack/dependency-track

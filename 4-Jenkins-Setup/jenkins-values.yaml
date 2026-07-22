@@ -29,6 +29,7 @@ controller:
     - sonar
     - credentials-binding
     - dark-theme
+    - dependency-track
     - blueocean
 
   containerEnv:
