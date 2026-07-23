@@ -184,3 +184,22 @@ Generate Image SBOM
   -> sbom-reports/*.cyclonedx.json
   -> optional upload to Dependency-Track
 ```
+
+## 9. Configure Vulnerability Sources
+
+Dependency-Track can import SBOM components without showing vulnerabilities if
+the analyzer data sources are not configured. Create a free Sonatype OSS Index
+account and generate an API token:
+
+```text
+https://ossindex.sonatype.org
+```
+
+Then configure it in Dependency-Track:
+
+```text
+Administration > Analyzers > Sonatype OSS Index
+```
+
+Enable the analyzer and enter the OSS Index username/token. After saving,
+reanalyze the project or upload the SBOM again from Jenkins.
