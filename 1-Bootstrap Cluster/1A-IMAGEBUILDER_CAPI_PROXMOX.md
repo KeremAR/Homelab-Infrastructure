@@ -372,7 +372,7 @@ This serving flow is independent from node join:
 
 Therefore, `kubelet-csr-approver` does **not** approve a node joining the cluster. The node's client CSR can already be `Approved,Issued` and the node can join while its separate serving CSR remains `Pending`.
 
-CSR approval and TLS verification are different operations. The approver determines whether the CA may issue the certificate; the API server flag determines whether that issued certificate must be trusted and valid during each connection. Without the flag, the API server uses HTTPS but does not authenticate the kubelet endpoint, so the connection is vulnerable to a man-in-the-middle attack. Metrics Server performs its own kubelet certificate verification, which is why Metrics Server can reject the old self-signed certificate even while `kubectl logs` still works.
+CSR approval and TLS verification are different operations. The approver determines whether the CA may issue the certificate; the API server flag determines whether that issued certificate must be trusted and valid during each connection. Without the flag, the API server uses HTTPS but does not authenticate the kubelet endpoint, so the connection is vulnerable to a man-in-the-middle attack. A forged certificate alone is not enough to perform the attack: the attacker must also redirect or intercept API server-to-kubelet traffic, for example through ARP, DNS or routing manipulation. Metrics Server performs its own kubelet certificate verification, which is why Metrics Server can reject the old self-signed certificate even while `kubectl logs` still works.
 
 The generated CAPI YAML must enable both the kubelet request and API server verification before the cluster is created. Serving CSRs will be generated automatically but remain `Pending` until `kubelet-csr-approver` is installed after Calico. During that bootstrap window, normal API operations such as `kubectl get` and `apply` work, but kubelet-proxied operations such as `logs` and `exec` may fail until the serving CSRs are approved.
 
@@ -534,6 +534,8 @@ Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
 ### Install `kubelet-csr-approver`
 
 The bootstrap patch makes every kubelet request a CA-signed serving certificate, but Kubernetes deliberately leaves `kubernetes.io/kubelet-serving` CSRs `Pending`. Manual approval is not a permanent solution because replacement nodes and certificate rotation create new CSRs. Install [`kubelet-csr-approver`](https://github.com/postfinance/kubelet-csr-approver) after Calico so these requests are validated and approved automatically:
+
+> Without `kubelet-csr-approver`, every serving CSR would have to be reviewed and approved manually with `kubectl certificate approve <csr-name>`, including CSRs created by new/replacement nodes and certificate rotation.
 
 ```bash
 helm repo add kubelet-csr-approver https://postfinance.github.io/kubelet-csr-approver
