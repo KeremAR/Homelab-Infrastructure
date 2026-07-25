@@ -127,12 +127,25 @@ spec:
       owner: root:root
       path: /etc/kube-vip-prepare.sh
       permissions: "0700"
+    - content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "serverTLSBootstrap": true
+        }
+      owner: root:root
+      path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      permissions: "0644"
     initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
       nodeRegistration:
         kubeletExtraArgs:
         - name: provider-id
           value: proxmox://'{{ ds.meta_data.instance_id }}'
     joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
       nodeRegistration:
         kubeletExtraArgs:
         - name: provider-id
@@ -302,7 +315,19 @@ metadata:
 spec:
   template:
     spec:
+      files:
+      - content: |
+          {
+            "apiVersion": "kubelet.config.k8s.io/v1beta1",
+            "kind": "KubeletConfiguration",
+            "serverTLSBootstrap": true
+          }
+        owner: root:root
+        path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+        permissions: "0644"
       joinConfiguration:
+        patches:
+          directory: /etc/kubernetes/patches
         nodeRegistration:
           kubeletExtraArgs:
           - name: provider-id

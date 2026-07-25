@@ -339,6 +339,80 @@ spec:
 
 The node-specific worker template pattern above is taken from [`cluster3.yaml`](../cluster3.yaml). When templates live on local storage, also ensure each machine template has the correct `sourceNode` and that node's `templateID`.
 
+### Enable signed kubelet serving certificates before applying the YAML
+
+Kubelet uses two different certificate paths:
+
+- `kubernetes.io/kube-apiserver-client-kubelet` is the kubelet's **client** certificate for `kubelet → API server`. Kubernetes approves this automatically so the node can join the cluster.
+- `kubernetes.io/kubelet-serving` is the kubelet's **serving** certificate for clients connecting to `kubelet:10250`, including Metrics Server and the API server proxy used by `kubectl logs`/`exec`. Kubernetes does not approve this signer automatically.
+
+The generated CAPI YAML must enable `serverTLSBootstrap` before the cluster is created. The serving CSRs will then be generated automatically, but they will remain `Pending` until `kubelet-csr-approver` is installed after Calico.
+
+This behavior is documented by Kubernetes under [Enabling signed kubelet serving certificates](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/#kubelet-serving-certs). CAPI supplies the `KubeletConfiguration` through kubeadm's patch directory, as described in the Cluster API [Kubelet Configuration](https://cluster-api.sigs.k8s.io/tasks/bootstrap/kubeadm-bootstrap/kubelet-config) documentation.
+
+Add the following entries to the existing `KubeadmControlPlane.spec.kubeadmConfigSpec`. Append the new file to the existing `files` list; do not remove the kube-vip files. Keep the existing `nodeRegistration` fields:
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: homelab-control-plane
+  namespace: default
+spec:
+  kubeadmConfigSpec:
+    files:
+    # ...keep the existing kube-vip files
+    - content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "serverTLSBootstrap": true
+        }
+      owner: root:root
+      path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      permissions: "0644"
+    initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        # ...keep the existing control-plane nodeRegistration
+    joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        # ...keep the existing control-plane nodeRegistration
+```
+
+Add the same file and patch directory to the existing worker `KubeadmConfigTemplate.spec.template.spec`:
+
+```yaml
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: homelab-worker
+  namespace: default
+spec:
+  template:
+    spec:
+      files:
+      - content: |
+          {
+            "apiVersion": "kubelet.config.k8s.io/v1beta1",
+            "kind": "KubeletConfiguration",
+            "serverTLSBootstrap": true
+          }
+        owner: root:root
+        path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+        permissions: "0644"
+      joinConfiguration:
+        patches:
+          directory: /etc/kubernetes/patches
+        nodeRegistration:
+          # ...keep the existing worker nodeRegistration
+```
+
+Both resources are required: `KubeadmControlPlane` configures control-plane machines and `KubeadmConfigTemplate` configures workers.
+
 ```bash
 kubectl apply -f cluster.yaml
 ```
@@ -386,7 +460,7 @@ The owning `MachineDeployment` notices that a replica is missing and CAPI automa
 </details>
 
  
-## Step 9: Get kubeconfig and install Calico
+## Step 9: Get kubeconfig, install Calico and finish kubelet TLS
  
 ```bash
 clusterctl get kubeconfig homelab > homelab.kubeconfig
@@ -423,6 +497,103 @@ KUBECONFIG=homelab.kubeconfig kubectl get nodes
 ```
 
 Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
+
+### Install `kubelet-csr-approver`
+
+The bootstrap patch makes every kubelet request a CA-signed serving certificate, but Kubernetes deliberately leaves `kubernetes.io/kubelet-serving` CSRs `Pending`. Manual approval is not a permanent solution because replacement nodes and certificate rotation create new CSRs. Install [`kubelet-csr-approver`](https://github.com/postfinance/kubelet-csr-approver) after Calico so these requests are validated and approved automatically:
+
+```bash
+helm repo add kubelet-csr-approver https://postfinance.github.io/kubelet-csr-approver
+helm repo update
+
+helm install kubelet-csr-approver kubelet-csr-approver/kubelet-csr-approver \
+  --namespace kube-system \
+  --set providerRegex='^homelab.*$' \
+  --set providerIpPrefixes='192.168.0.0/24' \
+  --set bypassDnsResolution='true'
+```
+
+`providerRegex` restricts allowed node hostnames, while `providerIpPrefixes` restricts the IP SANs that may be signed. `bypassDnsResolution=true` is required here because the homelab does not provide DNS records for individual node names. The approver still performs its other requester, Common Name, hostname, signer and SAN checks.
+
+Wait for the controller and verify that the serving CSRs change to `Approved,Issued`:
+
+```bash
+kubectl rollout status deployment/kubelet-csr-approver -n kube-system
+kubectl get csr
+```
+
+The expected distinction is:
+
+```text
+kubernetes.io/kube-apiserver-client-kubelet   Approved,Issued  # automatic node join
+kubernetes.io/kubelet-serving                 Approved,Issued  # kubelet-csr-approver
+```
+
+Old duplicate serving CSRs may remain visible because CSRs are historical API objects. What matters is that each current node has an approved serving CSR and starts presenting the signed certificate.
+
+### Make the API server verify kubelet serving certificates
+
+This hardening has **not** been done merely by adding `serverTLSBootstrap` or installing the approver. Those steps give kubelet a signed serving certificate. The API server must separately be told to verify that certificate when it connects to `kubelet:10250` for requests such as `kubectl logs`, `exec`, `attach` and `port-forward`.
+
+By default, those commands may work even with an untrusted kubelet certificate because the API server does not verify it. Metrics Server is different: it connects to kubelet itself and performs its own TLS verification. The API server-to-kubelet behavior is described in [Communication between Nodes and the Control Plane](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/#api-server-to-kubelet).
+
+Do not confuse this with `--client-ca-file` or the API server's `--kubelet-client-certificate`/`--kubelet-client-key` flags. Those cover different identities and directions. `--kubelet-certificate-authority` specifically verifies the **server certificate presented by kubelet** to the API server.
+
+Only continue after the current kubelet-serving CSRs are `Approved,Issued`:
+
+```bash
+kubectl get csr
+```
+
+First record the flag in kubeadm's cluster-wide configuration:
+
+```bash
+kubectl edit configmap kubeadm-config -n kube-system
+```
+
+Add the flag to the YAML stored under `data.ClusterConfiguration`, preserving every existing field and list item:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubeadm-config
+  namespace: kube-system
+data:
+  ClusterConfiguration: |
+    apiServer:
+      extraArgs:
+      - name: kubelet-certificate-authority
+        value: /etc/kubernetes/pki/ca.crt
+      # ...keep the other existing API server arguments
+    # ...keep the rest of ClusterConfiguration
+```
+
+Editing the ConfigMap does not change the already-running API server. On every control-plane node, edit the static Pod manifest:
+
+```bash
+sudo nano /etc/kubernetes/manifests/kube-apiserver.yaml
+```
+
+Add the following flag to `spec.containers[0].command`, aligned with the other `- --...` arguments:
+
+```yaml
+spec:
+  containers:
+  - command:
+    - kube-apiserver
+    - --kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt
+    # ...keep all other kube-apiserver arguments
+```
+
+Saving the manifest makes kubelet restart the API server static Pod. A single-control-plane cluster has a short API interruption. This flag does not create or approve CSRs, so no additional approver is needed.
+
+After the API server returns, verify the proxied kubelet path:
+
+```bash
+kubectl get --raw "/api/v1/nodes/$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')/proxy/healthz"
+kubectl logs -n kube-system deployment/kubelet-csr-approver --tail=20
+```
 
 <details>
 <summary><strong>Issue 7 — nodes stuck NotReady: Calico init containers crash with "v2 microarchitecture" error</strong></summary>
