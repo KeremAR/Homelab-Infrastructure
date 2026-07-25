@@ -49,6 +49,11 @@ metadata:
   namespace: default
 spec:
   kubeadmConfigSpec:
+    clusterConfiguration:
+      apiServer:
+        extraArgs:
+        - name: kubelet-certificate-authority
+          value: /etc/kubernetes/pki/ca.crt
     files:
     - content: |
         apiVersion: v1

@@ -346,11 +346,39 @@ Kubelet uses two different certificate paths:
 - `kubernetes.io/kube-apiserver-client-kubelet` is the kubelet's **client** certificate for `kubelet → API server`. Kubernetes approves this automatically so the node can join the cluster.
 - `kubernetes.io/kubelet-serving` is the kubelet's **serving** certificate for clients connecting to `kubelet:10250`, including Metrics Server and the API server proxy used by `kubectl logs`/`exec`. Kubernetes does not approve this signer automatically.
 
-The generated CAPI YAML must enable `serverTLSBootstrap` before the cluster is created. The serving CSRs will then be generated automatically, but they will remain `Pending` until `kubelet-csr-approver` is installed after Calico.
+By default, kubeadm does not leave kubelet without a serving certificate: kubelet uses a **self-signed** serving certificate. The problem is that this certificate is not signed by the Kubernetes CA and may not contain the node IP/DNS SANs required by clients such as Metrics Server.
 
-This behavior is documented by Kubernetes under [Enabling signed kubelet serving certificates](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/#kubelet-serving-certs). CAPI supplies the `KubeletConfiguration` through kubeadm's patch directory, as described in the Cluster API [Kubelet Configuration](https://cluster-api.sigs.k8s.io/tasks/bootstrap/kubeadm-bootstrap/kubelet-config) documentation.
+The complete setup has three independent parts:
 
-Add the following entries to the existing `KubeadmControlPlane.spec.kubeadmConfigSpec`. Append the new file to the existing `files` list; do not remove the kube-vip files. Keep the existing `nodeRegistration` fields:
+1. `serverTLSBootstrap: true` makes kubelet request a Kubernetes-CA-signed serving certificate with its node identity and SANs.
+2. `kubelet-csr-approver` validates and approves those serving CSRs; Kubernetes does not approve them automatically.
+3. `--kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt` makes the API server verify the certificate presented by kubelet when proxying `logs`, `exec`, `attach` and `port-forward` requests to `kubelet:10250`.
+
+`serverTLSBootstrap: true` does not sign or approve a certificate by itself. It enables kubelet's serving-certificate manager:
+
+1. Kubelet creates a private key locally.
+2. Kubelet submits a `kubernetes.io/kubelet-serving` CSR containing its node identity and requested IP/DNS SANs.
+3. The CSR stays `Pending` until an authorized approver approves it.
+4. The Kubernetes signer issues the certificate.
+5. Kubelet stores the issued certificate and key under its certificate directory (normally `/var/lib/kubelet/pki`) and starts presenting that certificate on HTTPS port `10250`.
+6. Kubelet requests a replacement before the certificate expires, so the new serving CSR also needs automatic approval.
+
+This serving flow is independent from node join:
+
+| CSR signer | Purpose | Default approval |
+|---|---|---|
+| `kubernetes.io/kube-apiserver-client-kubelet` | Authenticates `kubelet → API server`; required for the node to join and operate | Automatically approved by the standard kubeadm-installed bootstrap/rotation RBAC and Kubernetes controllers |
+| `kubernetes.io/kubelet-serving` | Authenticates the kubelet HTTPS server to clients connecting to `:10250` | Not automatically approved by Kubernetes; handled here by `kubelet-csr-approver` |
+
+Therefore, `kubelet-csr-approver` does **not** approve a node joining the cluster. The node's client CSR can already be `Approved,Issued` and the node can join while its separate serving CSR remains `Pending`.
+
+CSR approval and TLS verification are different operations. The approver determines whether the CA may issue the certificate; the API server flag determines whether that issued certificate must be trusted and valid during each connection. Without the flag, the API server uses HTTPS but does not authenticate the kubelet endpoint, so the connection is vulnerable to a man-in-the-middle attack. Metrics Server performs its own kubelet certificate verification, which is why Metrics Server can reject the old self-signed certificate even while `kubectl logs` still works.
+
+The generated CAPI YAML must enable both the kubelet request and API server verification before the cluster is created. Serving CSRs will be generated automatically but remain `Pending` until `kubelet-csr-approver` is installed after Calico. During that bootstrap window, normal API operations such as `kubectl get` and `apply` work, but kubelet-proxied operations such as `logs` and `exec` may fail until the serving CSRs are approved.
+
+This behavior is documented by Kubernetes under [Enabling signed kubelet serving certificates](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/#kubelet-serving-certs) and [API server to kubelet communication](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/#api-server-to-kubelet). CAPI supplies the `KubeletConfiguration` through kubeadm's patch directory, as described in the Cluster API [Kubelet Configuration](https://cluster-api.sigs.k8s.io/tasks/bootstrap/kubeadm-bootstrap/kubelet-config) documentation.
+
+Add the following entries to the existing `KubeadmControlPlane.spec.kubeadmConfigSpec`. `clusterConfiguration.apiServer.extraArgs` configures the API server directly; the file patch configures kubelet. Append the new file to the existing `files` list, do not remove the kube-vip files, and keep the existing `nodeRegistration` fields:
 
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta2
@@ -360,6 +388,11 @@ metadata:
   namespace: default
 spec:
   kubeadmConfigSpec:
+    clusterConfiguration:
+      apiServer:
+        extraArgs:
+        - name: kubelet-certificate-authority
+          value: /etc/kubernetes/pki/ca.crt
     files:
     # ...keep the existing kube-vip files
     - content: |
@@ -411,7 +444,7 @@ spec:
           # ...keep the existing worker nodeRegistration
 ```
 
-Both resources are required: `KubeadmControlPlane` configures control-plane machines and `KubeadmConfigTemplate` configures workers.
+Both resources are required for `serverTLSBootstrap`: `KubeadmControlPlane` configures control-plane kubelets and `KubeadmConfigTemplate` configures worker kubelets. The API server CA flag belongs only in `KubeadmControlPlane` because workers do not run an API server.
 
 ```bash
 kubectl apply -f cluster.yaml
@@ -531,64 +564,7 @@ kubernetes.io/kubelet-serving                 Approved,Issued  # kubelet-csr-app
 
 Old duplicate serving CSRs may remain visible because CSRs are historical API objects. What matters is that each current node has an approved serving CSR and starts presenting the signed certificate.
 
-### Make the API server verify kubelet serving certificates
-
-This hardening has **not** been done merely by adding `serverTLSBootstrap` or installing the approver. Those steps give kubelet a signed serving certificate. The API server must separately be told to verify that certificate when it connects to `kubelet:10250` for requests such as `kubectl logs`, `exec`, `attach` and `port-forward`.
-
-By default, those commands may work even with an untrusted kubelet certificate because the API server does not verify it. Metrics Server is different: it connects to kubelet itself and performs its own TLS verification. The API server-to-kubelet behavior is described in [Communication between Nodes and the Control Plane](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/#api-server-to-kubelet).
-
-Do not confuse this with `--client-ca-file` or the API server's `--kubelet-client-certificate`/`--kubelet-client-key` flags. Those cover different identities and directions. `--kubelet-certificate-authority` specifically verifies the **server certificate presented by kubelet** to the API server.
-
-Only continue after the current kubelet-serving CSRs are `Approved,Issued`:
-
-```bash
-kubectl get csr
-```
-
-First record the flag in kubeadm's cluster-wide configuration:
-
-```bash
-kubectl edit configmap kubeadm-config -n kube-system
-```
-
-Add the flag to the YAML stored under `data.ClusterConfiguration`, preserving every existing field and list item:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubeadm-config
-  namespace: kube-system
-data:
-  ClusterConfiguration: |
-    apiServer:
-      extraArgs:
-      - name: kubelet-certificate-authority
-        value: /etc/kubernetes/pki/ca.crt
-      # ...keep the other existing API server arguments
-    # ...keep the rest of ClusterConfiguration
-```
-
-Editing the ConfigMap does not change the already-running API server. On every control-plane node, edit the static Pod manifest:
-
-```bash
-sudo nano /etc/kubernetes/manifests/kube-apiserver.yaml
-```
-
-Add the following flag to `spec.containers[0].command`, aligned with the other `- --...` arguments:
-
-```yaml
-spec:
-  containers:
-  - command:
-    - kube-apiserver
-    - --kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt
-    # ...keep all other kube-apiserver arguments
-```
-
-Saving the manifest makes kubelet restart the API server static Pod. A single-control-plane cluster has a short API interruption. This flag does not create or approve CSRs, so no additional approver is needed.
-
-After the API server returns, verify the proxied kubelet path:
+The API server verification flag was already installed from `cluster.yaml`; the approver does not add or modify it. Once the serving CSRs are approved and kubelet starts presenting the CA-signed certificates, verify the API server-to-kubelet path:
 
 ```bash
 kubectl get --raw "/api/v1/nodes/$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')/proxy/healthz"
