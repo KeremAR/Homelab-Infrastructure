@@ -80,10 +80,11 @@ longhorn
 
 No manual PV is needed for Jenkins in this setup. Longhorn dynamically creates PVs when the Jenkins PVCs are created.
 
-Jenkins uses a dedicated single-replica Longhorn StorageClass:
+Jenkins uses the cluster-wide single-replica Longhorn StorageClass installed at
+the end of the Longhorn setup:
 
 ```text
-longhorn-jenkins-single
+longhorn-storageclass
 ```
 
 Reason: Jenkins cache volumes are not critical application data. With Longhorn
@@ -147,10 +148,9 @@ This is intentionally not `cluster-admin`. The first phase only needs Jenkins to
 
 ---
 
-## 5. Create Jenkins StorageClass And PVCs
+## 5. Create Jenkins PVCs
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/jenkins-storageclass.yaml
 kubectl apply -f 4-Jenkins-Setup/jenkins-pvc.yaml
 kubectl get pvc -n jenkins
 ```
@@ -168,7 +168,7 @@ jenkins-venv-cache-pvc
 These PVCs use Longhorn with one replica:
 
 ```yaml
-storageClassName: longhorn-jenkins-single
+storageClassName: longhorn-storageclass
 ```
 
 `jenkins-tools-cache-pvc` is mounted into Jenkins agent pods at:

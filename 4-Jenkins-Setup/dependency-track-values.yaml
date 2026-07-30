@@ -11,7 +11,7 @@ apiServer:
 
   persistentVolume:
     enabled: true
-    className: longhorn-jenkins-single
+    className: longhorn-storageclass
     size: 5Gi
 
   extraEnv:

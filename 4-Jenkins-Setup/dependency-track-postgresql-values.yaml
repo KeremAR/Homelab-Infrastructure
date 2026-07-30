@@ -11,8 +11,7 @@ auth:
 primary:
   persistence:
     enabled: true
-    storageClass: longhorn-jenkins-single
-    size: 5Gi
+    existingClaim: dependency-track-postgresql-pvc
 
   resourcesPreset: none
   resources:

@@ -26,9 +26,7 @@ resources:
 
 persistence:
   enabled: true
-  storageClass: longhorn-jenkins-single
-  accessMode: ReadWriteOnce
-  size: 5Gi
+  existingClaim: sonarqube-data-pvc
 
 jdbcOverwrite:
   enabled: true

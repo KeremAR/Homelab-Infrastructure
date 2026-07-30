@@ -17,31 +17,64 @@ Prerequisites from earlier steps:
 
 PostgreSQL StatefulSets need a default `StorageClass`. Old K3s had `local-path` by default; this CAPI cluster does not. Longhorn is used here.
 
-On all three worker nodes, prepare the storage path and install the prerequisites:
+Install PSSH on the administration machine (the machine where `kubectl` and the SSH private key are available):
 
 ```bash
-sudo mkdir -p /mnt/longhorn-storage
+sudo apt update
+sudo apt install -y pssh
 ```
 
-Install node prerequisites. Package names depend on the OS:
+On Debian/Ubuntu, the command installed by the `pssh` package is named `parallel-ssh`. Build its host list automatically from the worker nodes' Kubernetes `InternalIP` addresses:
+
+```bash
+kubectl get nodes \
+  -l node-role.kubernetes.io/node \
+  -o jsonpath='{range .items[*]}root@{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' \
+  > longhorn-workers.txt
+
+cat longhorn-workers.txt
+```
+
+The CAPI configuration adds `$HOME/.ssh/id_ed25519.pub` to the `root` user's `sshAuthorizedKeys`, so PSSH must connect as `root` with the matching private key.
+
+When CAPI recreates a VM while reusing its previous IP address, the VM receives a new SSH host key. After confirming that these are the expected recreated worker VMs, remove only their stale entries from `known_hosts`; `StrictHostKeyChecking=accept-new` will then record the new keys during the first connection:
+
+```bash
+while IFS= read -r host; do
+  ssh-keygen -f "$HOME/.ssh/known_hosts" -R "${host#*@}"
+done < longhorn-workers.txt
+```
+
+In a security-sensitive environment, verify each new host-key fingerprint through the Proxmox console before accepting it. Prepare the Longhorn storage path on all three workers in parallel:
+
+```bash
+parallel-ssh \
+  -h longhorn-workers.txt \
+  -i \
+  -x "-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" \
+  "mkdir -p /mnt/longhorn-storage"
+```
+
+Install the Longhorn node prerequisites on all workers in parallel. Package names depend on the OS:
 
 ```bash
 # Debian/Ubuntu style
-sudo apt update
-sudo apt install -y open-iscsi nfs-common util-linux e2fsprogs xfsprogs
-sudo systemctl enable --now iscsid
+parallel-ssh \
+  -h longhorn-workers.txt \
+  -i \
+  -x "-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" \
+  "apt-get update && \
+   env DEBIAN_FRONTEND=noninteractive apt-get install -y open-iscsi nfs-common util-linux e2fsprogs xfsprogs && \
+   systemctl enable --now iscsid"
 ```
 
-Label the three worker nodes before installing Longhorn. Replace the example names below with the current names shown by `kubectl get nodes` if a CAPI Machine has been recreated:
+Label all worker nodes before installing Longhorn. The selector uses the worker-role label, so this command continues to work when CAPI recreates a Machine with a different node name:
 
 ```bash
-kubectl get nodes
-
-kubectl label node \
-  homelab-workers-pve1-qn44f-mdvk6 \
-  homelab-workers-pve2-4jwgz-wvsmc \
-  homelab-workers-pve2-4jwgz-2tl55 \
-  node.longhorn.io/create-default-disk=true
+kubectl label nodes \
+  -l node-role.kubernetes.io/node \
+  node.longhorn.io/create-default-disk=true \
+  --overwrite
 ```
 
 Do not add this label to the control-plane node.
@@ -49,7 +82,7 @@ Do not add this label to the control-plane node.
 Install Longhorn:
 
 ```bash
-git clone --single-branch --branch v1.12.x https://github.com/longhorn/longhorn.git
+git clone --single-branch --branch v1.12.0 https://github.com/longhorn/longhorn.git
 cd longhorn
 ```
 
@@ -65,14 +98,38 @@ data:
   default-setting.yaml: |-
     create-default-disk-labeled-nodes: true
     default-data-path: /mnt/longhorn-storage/
-    default-replica-count: 3
 ```
 
 `create-default-disk-labeled-nodes` defaults to `false`. When it is left disabled, Longhorn does not use the label as a filter and registers `default-data-path` as a Longhorn disk on every newly detected eligible node. Setting it to `true` makes Longhorn register the default storage path only on nodes labeled `node.longhorn.io/create-default-disk=true`; this keeps Longhorn replica storage on the three workers and off the control-plane node. This behavior is described in the official Longhorn documentation under [Configuring Defaults for Nodes and Disks](https://longhorn.io/docs/1.12.0/nodes-and-volumes/nodes/default-disk-and-node-config/).
 
 Here, “create default disk” means registering `/mnt/longhorn-storage/` as a storage location in Longhorn—it does not create a physical disk, partition, or filesystem. The directory and any intended disk mount must already be prepared on every labeled worker.
 
-`default-replica-count: 3` means that each newly created Longhorn volume has three data copies, which Longhorn distributes across the available worker storage nodes.
+> **Replica-count scope:** Longhorn's `default-replica-count` setting is used
+> primarily for volumes created through the Longhorn UI. For volumes
+> dynamically provisioned from Kubernetes PVCs, replica count is configured
+> with the StorageClass `parameters.numberOfReplicas` field. Changing
+> `default-replica-count` does not edit an existing or generated StorageClass.
+> If `numberOfReplicas` is omitted from a StorageClass, its documented default
+> is still `3`; it does not fall back to `default-replica-count`.
+
+For example, even if Longhorn were installed with:
+
+```yaml
+default-replica-count: 1
+```
+
+the installation manifest's default `longhorn` StorageClass still contains:
+
+```yaml
+parameters:
+  numberOfReplicas: "3"
+```
+
+Therefore, a PVC with `storageClassName: longhorn` receives three replicas, not
+one. This is why `default-replica-count` is intentionally omitted above: this
+setup creates volumes through Kubernetes PVCs. The custom
+`longhorn-storageclass` created below explicitly sets
+`numberOfReplicas: "1"` for workloads that require one replica.
 
 Then apply:
 
@@ -95,6 +152,18 @@ UI:
 ```text
 http://longhorn.192.168.0.110.nip.io
 ```
+
+As the final Longhorn installation step, create the cluster-wide,
+single-replica StorageClass used explicitly by workloads that do not require
+three Longhorn data copies:
+
+```bash
+kubectl apply -f 3-Kubectl-Deploy/longhorn-storageclass.yaml
+kubectl get storageclass longhorn-storageclass
+```
+
+This class is not marked as the cluster default. Workloads select it with
+`storageClassName: longhorn-storageclass`.
 
 ---
 

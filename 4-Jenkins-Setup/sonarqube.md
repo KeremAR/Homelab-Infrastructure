@@ -17,12 +17,16 @@ http://sonarqube.192.168.0.110.nip.io
 4-Jenkins-Setup/
   sonarqube.md
   sonarqube-secrets.yaml
+  sonarqube-pvc.yaml
   sonarqube-postgresql-values.yaml
   sonarqube-values.yaml
   sonarqube-httproute.yaml
 ```
 
 `sonarqube-values.yaml` is used by the SonarQube Helm chart.
+`sonarqube-pvc.yaml` creates two manually managed claims using the cluster-wide,
+single-replica `longhorn-storageclass`: 2 GiB for PostgreSQL and 5 GiB for the
+SonarQube application.
 `sonarqube-postgresql-values.yaml` is used by the PostgreSQL Helm chart.
 `sonarqube-httproute.yaml` exposes SonarQube through NGINX Gateway Fabric.
 
@@ -133,6 +137,16 @@ helm repo update
 ## 5. Install PostgreSQL
 
 PostgreSQL is installed first because SonarQube needs a database at startup.
+Create its dedicated PVC before applying the PostgreSQL Helm values:
+
+```bash
+kubectl apply -f 4-Jenkins-Setup/sonarqube-pvc.yaml
+kubectl get pvc sonarqube-postgresql-pvc sonarqube-data-pvc -n sonarqube
+```
+
+The PostgreSQL values set
+`primary.persistence.existingClaim: sonarqube-postgresql-pvc`, so the chart
+mounts this claim.
 
 ```bash
 helm upgrade --install sonarqube-postgresql bitnami/postgresql \
@@ -155,7 +169,9 @@ kubectl get pvc -n sonarqube
 ## 6. Install SonarQube
 
 SonarQube runs as Community Build and connects to PostgreSQL through
-`jdbcOverwrite`.
+`jdbcOverwrite`. Its values set
+`persistence.existingClaim: sonarqube-data-pvc`, so the chart mounts the
+manually created application claim instead of generating a PVC.
 
 ```bash
 helm upgrade --install sonarqube sonarqube/sonarqube \

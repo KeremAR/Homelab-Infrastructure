@@ -15,6 +15,7 @@ http://dependency-track.192.168.0.110.nip.io
 4-Jenkins-Setup/
   dependency-track.md
   dependency-track-secrets.yaml
+  dependency-track-pvc.yaml
   dependency-track-postgresql-values.yaml
   dependency-track-values.yaml
   dependency-track-httproute.yaml
@@ -22,6 +23,8 @@ http://dependency-track.192.168.0.110.nip.io
 
 The old notes used `hostPath`, `local-path`, and node affinity. This cluster now
 uses Longhorn, so PostgreSQL and Dependency-Track API storage use Longhorn PVCs.
+`dependency-track-pvc.yaml` creates the dedicated 5 GiB PostgreSQL claim with
+the cluster-wide, single-replica `longhorn-storageclass`.
 
 ## 2. Secrets
 
@@ -64,7 +67,19 @@ now.
 ## 4. Install PostgreSQL
 
 Dependency-Track should not run on the embedded H2 database for a persistent
-cluster install. Install PostgreSQL first:
+cluster install. Create its dedicated PVC before applying the PostgreSQL Helm
+values:
+
+```bash
+kubectl apply -f 4-Jenkins-Setup/dependency-track-pvc.yaml
+kubectl get pvc dependency-track-postgresql-pvc -n dependency-track
+```
+
+The PostgreSQL values set
+`primary.persistence.existingClaim: dependency-track-postgresql-pvc`, so the
+chart mounts this claim instead of generating its own PVC.
+
+Then install PostgreSQL:
 
 ```bash
 helm upgrade --install dtrack-postgresql bitnami/postgresql \
