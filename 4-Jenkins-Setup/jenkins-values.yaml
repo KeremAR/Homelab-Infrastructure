@@ -30,6 +30,7 @@ controller:
     - credentials-binding
     - dark-theme
     - dependency-track
+    - copyartifact
     - blueocean
 
   containerEnv:
@@ -126,7 +127,7 @@ controller:
                       description: "Dependency-Track API key for SBOM upload"
 
         jobs:
-          - script: >
+          - script: |
               multibranchPipelineJob('homelab-app-ci') {
                 displayName('Homelab App CI')
                 description('Runs linting, unit tests, and Trivy checks for Homelab-App branches and pull requests.')
@@ -166,6 +167,81 @@ controller:
                   }
                 }
               }
+
+              def createReleaseJob = {
+                String jobName,
+                String display,
+                String serviceName,
+                String contextPath,
+                String dockerfilePath,
+                String defaultBranch,
+                String dockerCachePvc,
+                String registryRepository ->
+                pipelineJob(jobName) {
+                  displayName(display)
+                  description("Manual release pipeline for ${serviceName}. It reuses the latest successful release-branch CI artifact, or rebuilds when explicitly allowed.")
+
+                  parameters {
+                    stringParam('RELEASE_BRANCH', defaultBranch, 'Release branch to deploy, for example release/user-service-v1.0')
+                    choiceParam('DEPLOY_ENVIRONMENT', ['staging', 'prod'], 'Registry tag/deploy environment suffix.')
+                    booleanParam('REBUILD_IF_CI_NOT_SUCCESS', false, 'If the latest CI build is not SUCCESS, checkout the release branch and build inside this release job.')
+                    stringParam('SERVICE_NAME', serviceName, 'Managed by JCasC. Logical service/image name.')
+                    stringParam('CONTEXT_PATH', contextPath, 'Managed by JCasC. Docker build context.')
+                    stringParam('DOCKERFILE_PATH', dockerfilePath, 'Managed by JCasC. Dockerfile path.')
+                    stringParam('DOCKER_CACHE_PVC', dockerCachePvc, 'Managed by JCasC. Service-specific Docker cache PVC.')
+                    stringParam('REGISTRY_REPOSITORY', registryRepository, 'Managed by JCasC. Target GHCR repository name.')
+                  }
+
+                  definition {
+                    cpsScm {
+                      scm {
+                        git {
+                          remote {
+                            url('https://github.com/KeremAR/Homelab-SharedLibrary.git')
+                            credentials('github-token')
+                          }
+                          branch('*/main')
+                        }
+                      }
+                      scriptPath('pipelines/release/Jenkinsfile')
+                      lightweight(true)
+                    }
+                  }
+                }
+              }
+
+              createReleaseJob(
+                'release-user-service',
+                'User Service Release',
+                'user-service',
+                'user-service',
+                'user-service/Dockerfile',
+                'release/user-service-v1.0',
+                'jenkins-docker-cache-user-service-pvc',
+                'todo-app-user-service'
+              )
+
+              createReleaseJob(
+                'release-todo-service',
+                'Todo Service Release',
+                'todo-service',
+                'todo-service',
+                'todo-service/Dockerfile',
+                'release/todo-service-v1.0',
+                'jenkins-docker-cache-todo-service-pvc',
+                'todo-app-todo-service'
+              )
+
+              createReleaseJob(
+                'release-frontend',
+                'Frontend Release',
+                'frontend',
+                'frontend',
+                'frontend/Dockerfile',
+                'release/frontend-v1.0',
+                'jenkins-docker-cache-frontend-pvc',
+                'todo-app-frontend'
+              )
 
 persistence:
   enabled: true
