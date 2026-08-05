@@ -462,6 +462,23 @@ JCasC job not created:
 kubectl logs -n jenkins statefulset/jenkins | grep -i casc
 ```
 
+JCasC/Job DSL job exists on disk but does not appear in the UI:
+
+```bash
+kubectl exec -n jenkins statefulset/jenkins -c jenkins -- ls /var/jenkins_home/jobs
+```
+
+If the job directory exists but Jenkins UI/API does not list it, Jenkins has not
+loaded the written `config.xml` into its runtime model yet. This can happen after
+Helm/JCasC hot reload when Job DSL writes new jobs. Run:
+
+```text
+Manage Jenkins -> Reload Configuration from Disk
+```
+
+Do this only when no builds are running. A fresh Jenkins start normally reads
+the jobs during boot, so this is mainly a hot-reload troubleshooting step.
+
 Reverse proxy warning in Jenkins UI:
 
 ```text

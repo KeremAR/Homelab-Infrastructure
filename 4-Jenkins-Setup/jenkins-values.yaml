@@ -31,7 +31,8 @@ controller:
     - dark-theme
     - dependency-track
     - copyartifact
-    - blueocean
+    - list-git-branches-parameter
+  installLatestPlugins: false
 
   containerEnv:
     - name: GITHUB_USERNAME
@@ -179,10 +180,23 @@ controller:
                 String registryRepository ->
                 pipelineJob(jobName) {
                   displayName(display)
-                  description("Manual release pipeline for ${serviceName}. It reuses the latest successful release-branch CI artifact, or rebuilds when explicitly allowed.")
+                  description('Manual release pipeline for ' + serviceName + '. It reuses the latest successful release-branch CI artifact, or rebuilds when explicitly allowed.')
 
                   parameters {
-                    stringParam('RELEASE_BRANCH', defaultBranch, 'Release branch to deploy, for example release/user-service-v1.0')
+                    listGitBranches {
+                      name('RELEASE_BRANCH')
+                      description('Select release branch to deploy.')
+                      remoteURL('https://github.com/KeremAR/Homelab-App.git')
+                      credentialsId('github-token')
+                      defaultValue(defaultBranch)
+                      branchFilter('origin/(' + defaultBranch.replaceAll(/v[0-9].*/, 'v.*') + ')')
+                      type('BRANCH')
+                      sortMode('DESCENDING_SMART')
+                      selectedValue('DEFAULT')
+                      tagFilter('*')
+                      listSize('20')
+                      quickFilterEnabled(true)
+                    }
                     choiceParam('DEPLOY_ENVIRONMENT', ['staging', 'prod'], 'Registry tag/deploy environment suffix.')
                     booleanParam('REBUILD_IF_CI_NOT_SUCCESS', false, 'If the latest CI build is not SUCCESS, checkout the release branch and build inside this release job.')
                     stringParam('SERVICE_NAME', serviceName, 'Managed by JCasC. Logical service/image name.')
