@@ -172,7 +172,8 @@ controller:
               def createReleaseJob = {
                 String jobName,
                 String display,
-                String defaultBranch ->
+                String defaultBranch,
+                String branchRegex ->
                 pipelineJob(jobName) {
                   displayName(display)
                   description('Manual release pipeline. Select an application branch, choose the target environment, and decide whether to reuse the latest successful CI artifact.')
@@ -184,7 +185,7 @@ controller:
                       remoteURL('https://github.com/KeremAR/Homelab-App.git')
                       credentialsId('github-token')
                       defaultValue(defaultBranch)
-                      branchFilter('refs/heads/(.*)')
+                      branchFilter(branchRegex)
                       type('BRANCH')
                       sortMode('DESCENDING_SMART')
                       selectedValue('DEFAULT')
@@ -217,19 +218,22 @@ controller:
               createReleaseJob(
                 'release-user-service',
                 'User Service Release',
-                'main'
+                'release/user-service-v1.0',
+                'refs/heads/(release/user-service-.*)'
               )
 
               createReleaseJob(
                 'release-todo-service',
                 'Todo Service Release',
-                'main'
+                'release/todo-service-v1.0',
+                'refs/heads/(release/todo-service-.*)'
               )
 
               createReleaseJob(
                 'release-frontend',
                 'Frontend Release',
-                'main'
+                'release/frontend-v1.0',
+                'refs/heads/(release/frontend-.*)'
               )
 
 persistence:
