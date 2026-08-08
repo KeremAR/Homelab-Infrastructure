@@ -32,6 +32,7 @@ controller:
     - dependency-track
     - copyartifact
     - list-git-branches-parameter
+    - build-user-vars-plugin
   installLatestPlugins: false
 
   containerEnv:
@@ -194,7 +195,7 @@ controller:
                       quickFilterEnabled(true)
                     }
                     choiceParam('DEPLOY_ENVIRONMENT', ['staging', 'prod'], 'Registry tag/deploy environment suffix.')
-                    booleanParam('USE_LAST_SUCCESSFUL_CI_ARTIFACT', true, 'Use the selected branch CI job latest successful image artifact. If unchecked, this release job checks out the branch and builds the image itself.')
+                    booleanParam('USE_CI_ARTIFACT', true, 'Use the selected branch CI job latest completed artifact, requiring its ci-success marker and matching commit. If unchecked, this release job builds the image itself. Production requires this to stay enabled.')
                   }
 
                   definition {
