@@ -9,7 +9,8 @@ Goal: install Jenkins on the Kubernetes cluster with Helm and JCasC. This first 
 - The pipeline agent pod template lives in the shared library.
 - The agent uses PVC-backed caches for Trivy and Python virtualenvs.
 - SonarQube integration uses a token generated from SonarQube after it is installed.
-- ArgoCD, GitOps deploy, Docker image build, and production deploy are not included yet.
+- ArgoCD is not included yet. Manual release jobs can build or reuse CI image
+  artifacts, push to GHCR, update the manifest repo, and apply with kubectl.
 
 Current Jenkins URL after install:
 
@@ -115,20 +116,52 @@ JENKINS_ADMIN_USER=admin
 JENKINS_ADMIN_PASSWORD=change-me
 GITHUB_USERNAME=KeremAR
 GITHUB_TOKEN=ghp_your_token_here
+DOCKER_CONFIG_JSON=base64_encoded_docker_config_json
 # Fill this after SonarQube is installed and a token is generated.
 SONAR_TOKEN=squ_your_token_here
+# Fill this before using release deploy jobs.
+KUBECONFIG_B64=base64_encoded_kubeconfig
 EOF
 ```
 
 Do not commit `.env`.
 
-`GITHUB_DOCKER_AUTH` is not a second token. It is only this value:
+`DOCKER_CONFIG_JSON` is not a second token. It is the base64 encoded Docker
+config JSON used by the Kubernetes `ghcr-creds` imagePullSecret.
 
-```text
-base64("GITHUB_USERNAME:GITHUB_TOKEN")
+You can generate it after logging in to GHCR:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+cat ~/.docker/config.json
 ```
 
-It is needed because `jenkins-secrets.yaml` declares the GHCR pull secret in Kubernetes `dockerconfigjson` format.
+If the file contains an `auths.ghcr.io.auth` entry, encode the Docker config:
+
+```bash
+export DOCKER_CONFIG_JSON=$(cat ~/.docker/config.json | base64 -w0)
+```
+
+If the file uses a `credsStore` entry and `auths.ghcr.io` is empty, Kubernetes
+cannot use it as an imagePullSecret. Create a minimal config instead:
+
+```bash
+GHCR_AUTH=$(printf "%s:%s" "$GITHUB_USERNAME" "$GITHUB_TOKEN" | base64 -w0)
+
+cat > /tmp/ghcr-dockerconfig.json <<EOF
+{
+  "auths": {
+    "ghcr.io": {
+      "auth": "$GHCR_AUTH"
+    }
+  }
+}
+EOF
+
+export DOCKER_CONFIG_JSON=$(base64 -w0 /tmp/ghcr-dockerconfig.json)
+```
+
+Then copy the value into `.env`.
 
 ---
 
@@ -144,7 +177,9 @@ This creates:
 - `jenkins` ServiceAccount
 - namespace-scoped Role/RoleBinding for Jenkins agent pod management
 
-This is intentionally not `cluster-admin`. The first phase only needs Jenkins to run CI agents in its own namespace.
+This is intentionally not `cluster-admin`. Jenkins can manage CI agents in its
+own namespace. Release deploy jobs do not use this ServiceAccount for
+application namespaces; they use a kubeconfig stored as a Jenkins credential.
 
 ---
 
@@ -194,12 +229,6 @@ source .env
 set +a
 ```
 
-Create the Docker auth value:
-
-```bash
-export GITHUB_DOCKER_AUTH=$(printf "%s:%s" "$GITHUB_USERNAME" "$GITHUB_TOKEN" | base64 -w0)
-```
-
 Apply the declarative Secret manifest with `envsubst`:
 
 ```bash
@@ -230,6 +259,41 @@ sudo apt install -y gettext-base
 If SonarQube is not installed yet, `SONAR_TOKEN` can stay as a placeholder.
 Before upgrading Jenkins with SonarQube enabled, generate a real token in the
 SonarQube UI and re-apply `jenkins-secrets.yaml`.
+
+Release deploy jobs also need a kubeconfig. Take it from the Kubernetes master
+VM, not from your local workstation:
+
+```bash
+ssh <master-vm-user>@<master-vm-ip>
+
+# kubeadm clusters usually keep the admin kubeconfig here:
+sudo cp /etc/kubernetes/admin.conf /tmp/homelab-kubeconfig
+sudo chown "$USER:$USER" /tmp/homelab-kubeconfig
+
+# If this is a k3s cluster instead, use:
+# sudo cp /etc/rancher/k3s/k3s.yaml /tmp/homelab-kubeconfig
+# sudo chown "$USER:$USER" /tmp/homelab-kubeconfig
+
+# Make sure the Kubernetes API server address is the master VM IP,
+# not 127.0.0.1.
+sed -i 's#https://127.0.0.1:6443#https://<master-vm-ip>:6443#' /tmp/homelab-kubeconfig
+
+base64 -w0 /tmp/homelab-kubeconfig
+```
+
+Copy the command output into `.env` as `KUBECONFIG_B64` and re-apply
+`jenkins-secrets.yaml`. Jenkins stores it as a Secret Text credential named
+`kubeconfig`.
+
+Base64 is not required by Kubernetes `stringData`; `stringData` can store normal
+strings. We use base64 here because this setup moves the kubeconfig through
+`.env`, `envsubst`, a Kubernetes Secret, a Jenkins controller env var, and JCasC.
+Keeping it as one line avoids multiline YAML and shell quoting problems. If you
+create the Jenkins credential manually and paste the raw kubeconfig, set
+`kubeconfigIsBase64: false` in the deploy helper call.
+
+This kubeconfig defines what release jobs can do. For a real production setup,
+create a narrower deploy-only kubeconfig instead of using an admin kubeconfig.
 
 ---
 
@@ -363,12 +427,14 @@ Jenkinsfile
 
 at the root of the app repo.
 
-The Kubernetes agent pod template is intentionally not stored in `jenkins-values.yaml`. It lives in the shared library:
+The Kubernetes agent pod templates are intentionally not stored in
+`jenkins-values.yaml`. They live in the shared library:
 
 ```text
-SharedLibrary/src/com/company/jenkins/Utils.groovy
 SharedLibrary/vars/ciPythonPodTemplate.groovy
+SharedLibrary/vars/releasePodTemplate.groovy
 SharedLibrary/resources/com/company/jenkins/pods/lint-pod.yaml
+SharedLibrary/resources/com/company/jenkins/pods/release-pod.yaml
 ```
 
 That keeps pipeline runtime details versioned with pipeline code instead of Jenkins installation config.
@@ -385,13 +451,28 @@ git push
 
 Then update the submodule pointer in the infrastructure repo when needed.
 
-Multibranch Pipeline means Jenkins discovers branches and pull requests automatically. For this project it will be used for CI:
+Multibranch Pipeline means Jenkins discovers branches and pull requests automatically. For this project it is used for CI:
 
-- `feature/*` branch push
 - PR into `release/*`
 - updates on `release/*`
 
-Manual staging/production deploy should be a separate parameterized job later.
+Manual staging/production release jobs are separate parameterized jobs. They can
+reuse CI artifacts, push the selected image to GHCR, and deploy with kubectl when
+the `DEPLOY` checkbox is selected.
+
+Release deploys update the source-controlled manifest first:
+
+```text
+image-artifacts/pushed-images.txt
+  -> update 3-Kubectl-Deploy/<environment>/<service>/templates/deployment.yaml
+  -> commit and push Homelab-Infrastructure
+  -> kubectl apply -f that same manifest directory
+```
+
+The `kubectl` command uses the `kubeconfig` Jenkins Secret Text credential,
+which is populated from `KUBECONFIG_B64`. The release pod keeps
+`automountServiceAccountToken: false`, so deploy permission comes from the
+kubeconfig credential rather than the Jenkins pod ServiceAccount.
 
 ---
 
@@ -401,7 +482,6 @@ Removed for this phase:
 
 - SonarQube plugin/config/token
 - ArgoCD credentials and CLI config
-- GitOps manifest update logic
 - `cluster-admin`
 - manual `hostPath` PVs
 - `local-path`
@@ -429,6 +509,7 @@ Added:
 - narrower namespace RBAC
 - English Jenkins UI locale
 - declarative Secret YAML with `.env` + `envsubst`
+- manual release jobs that update the manifest repo, push the commit, and apply with kubeconfig
 
 ---
 

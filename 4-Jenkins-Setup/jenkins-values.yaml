@@ -57,6 +57,12 @@ controller:
           name: jenkins-app-secrets
           key: dependency-track-api-key
           optional: true
+    - name: KUBECONFIG_B64
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-app-secrets
+          key: kubeconfig-b64
+          optional: true
 
   JCasC:
     defaultConfig: true
@@ -127,6 +133,11 @@ controller:
                       id: "dependency-track-api-key"
                       secret: "${DEPENDENCY_TRACK_API_KEY}"
                       description: "Dependency-Track API key for SBOM upload"
+                  - string:
+                      scope: GLOBAL
+                      id: "kubeconfig"
+                      secret: "${KUBECONFIG_B64}"
+                      description: "Base64 kubeconfig used by manual release deploy jobs"
 
         jobs:
           - script: |
@@ -177,7 +188,7 @@ controller:
                 String branchRegex ->
                 pipelineJob(jobName) {
                   displayName(display)
-                  description('Manual release pipeline. Select an application branch, choose the target environment, and decide whether to reuse the latest successful CI artifact.')
+                  description('Manual release pipeline. Select an application branch, choose the target environment, decide whether to reuse the latest successful CI artifact, and optionally deploy.')
 
                   parameters {
                     listGitBranches {
@@ -196,6 +207,7 @@ controller:
                     }
                     choiceParam('DEPLOY_ENVIRONMENT', ['staging', 'prod'], 'Registry tag/deploy environment suffix.')
                     booleanParam('USE_CI_ARTIFACT', true, 'Use the selected branch CI job latest completed artifact, requiring its ci-success marker and matching commit. If unchecked, this release job builds the image itself. Production requires this to stay enabled.')
+                    booleanParam('DEPLOY', true, 'Deploy the pushed image to the selected Kubernetes environment.')
                   }
 
                   definition {
