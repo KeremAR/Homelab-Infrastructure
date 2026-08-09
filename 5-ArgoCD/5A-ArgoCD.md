@@ -82,8 +82,19 @@ homelab-gitops/
         production-frontend.yaml
 ```
 
-Those ArgoCD `Application` resources can point to this infrastructure
-repository:
+This is the App of Apps shape:
+
+```text
+root-application.yaml
+  -> environments/staging.yaml
+       -> environments/staging/staging-*.yaml
+  -> environments/production.yaml
+       -> environments/production/production-*.yaml
+```
+
+The files in `homelab-gitops` are ArgoCD `Application` manifests. They are not
+the application workload manifests. The service-level `Application` resources
+point to this infrastructure repository:
 
 ```text
 repoURL: https://github.com/KeremAR/Homelab-Infrastructure.git
@@ -250,27 +261,22 @@ pipeline steps. The local CLI installation above is for your own terminal.
 
 ---
 
-## 10. Bootstrap Applications Later
+## 10. Bootstrap Applications
 
-Do not apply the root app until the `homelab-gitops` Application manifests are
-cleaned up for the current plain-manifest layout.
-
-The later bootstrap command will be:
+After the `homelab-gitops` Application manifests point to the plain manifest
+paths in this infrastructure repo, bootstrap the tree with:
 
 ```bash
 kubectl apply -f homelab-gitops/argocd-manifests/root-application.yaml
 ```
 
-Before that, replace old Helm references in `homelab-gitops` with plain
-directory Applications that point to this repo:
+The service Applications should use plain directory sources like this:
 
 ```yaml
 source:
   repoURL: https://github.com/KeremAR/Homelab-Infrastructure.git
   targetRevision: main
   path: 3-Kubectl-Deploy/staging/todo-service/templates
-  directory:
-    recurse: false
 ```
 
 Also fix any finalizer typo:
@@ -279,9 +285,12 @@ Also fix any finalizer typo:
 resources-finalizer.argocd.argoproj.io
 ```
 
+Later, when moving to Helm, keep this plain-manifest structure and add a
+separate tree such as `argocd-helm/` for Helm-based Applications.
+
 ---
 
-## 10. References
+## 11. References
 
 - ArgoCD getting started:
   <https://github.com/argoproj/argo-cd/blob/master/docs/getting_started.md>

@@ -191,4 +191,42 @@ chmod +x kubectl-argo-rollouts-linux-amd64
 sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
 ```
 
+The CLI plugin can also start a temporary local dashboard:
+
+```bash
+kubectl argo rollouts dashboard
+```
+
+This command starts a local UI server, normally on `localhost:3100`. It is good
+for quick debugging, but the terminal process must keep running. For an always
+available dashboard, deploy the dashboard into the cluster instead.
+
+Install the dashboard Deployment, Service, and RBAC:
+
+```bash
+kubectl apply -n argo-rollouts \
+  -f https://github.com/argoproj/argo-rollouts/releases/latest/download/dashboard-install.yaml
+
+kubectl wait --for=condition=available deployment/argo-rollouts-dashboard \
+  -n argo-rollouts \
+  --timeout=180s
+```
+
+Expose it through NGINX Gateway Fabric:
+
+```bash
+kubectl apply -f 3-Kubectl-Deploy/argo-rollouts-dashboard-httproute.yaml
+kubectl get httproute -n argo-rollouts
+```
+
+UI:
+
+```text
+http://rollouts.192.168.0.110.nip.io
+```
+
+The Rollouts dashboard can promote, abort, and retry rollouts. It does not
+include its own login screen in this simple setup, so keep this route limited to
+the private homelab network.
+
 ---
