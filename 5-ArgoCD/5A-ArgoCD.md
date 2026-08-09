@@ -209,7 +209,30 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 echo
 ```
 
-Optional CLI login:
+---
+
+## 9. Install ArgoCD CLI
+
+The ArgoCD web UI works without the CLI, but the CLI is useful for manual
+admin operations such as login tests, app sync checks, and quick debugging.
+
+Install the same CLI version as the server manifest:
+
+```bash
+curl -sSL -o argocd-linux-amd64 \
+  https://github.com/argoproj/argo-cd/releases/download/v3.4.2/argocd-linux-amd64
+
+sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+rm argocd-linux-amd64
+```
+
+Verify:
+
+```bash
+argocd version --client
+```
+
+Now login from your local machine:
 
 ```bash
 ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
@@ -223,11 +246,11 @@ argocd login argocd.192.168.0.110.nip.io:80 \
 ```
 
 The Jenkins `kubernetes-tools` image already contains an ArgoCD CLI for future
-pipeline steps. Local CLI installation is optional for manual administration.
+pipeline steps. The local CLI installation above is for your own terminal.
 
 ---
 
-## 9. Bootstrap Applications Later
+## 10. Bootstrap Applications Later
 
 Do not apply the root app until the `homelab-gitops` Application manifests are
 cleaned up for the current plain-manifest layout.
