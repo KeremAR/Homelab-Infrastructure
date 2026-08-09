@@ -1,0 +1,20 @@
+{{- if .Values.runtimeConfig.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-service-runtime-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.name }}
+    {{ .Values.runtimeConfig.hotReloadLabel }}: "true"
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/component: {{ .Values.component }}
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+data:
+  runtime-config.json: |
+    {
+      "message": {{ .Values.runtimeConfig.message | quote }},
+      "version": {{ .Values.runtimeConfig.version }}
+    }
+{{- end }}

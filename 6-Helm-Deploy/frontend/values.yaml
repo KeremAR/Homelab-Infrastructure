@@ -1,0 +1,64 @@
+namespace: staging
+name: frontend
+component: frontend
+instance: staging-frontend
+managedBy: Helm
+
+replicaCount: 3
+revisionHistoryLimit: 3
+
+image:
+  repository: ghcr.io/keremar/todo-app-frontend
+  tag: 5ca78aa-v1.0-staging
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: github-registry-secret
+
+service:
+  port: 3000
+  targetPort: 3000
+  type: ClusterIP
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+securityContext:
+  fsGroup: 65532
+
+analysis:
+  name: check-frontend-readiness
+  metricName: health-check
+  path: /
+  successCondition: result.statusCode == 200
+  interval: 5s
+  count: 3
+  failureLimit: 2
+  timeoutSeconds: 5
+
+gateway:
+  enabled: true
+  apiVersion: gateway.networking.k8s.io/v1beta1
+  routeName: staging-frontend-route
+  parentName: shared-gateway
+  parentNamespace: nginx-gateway
+  hostname: todo-app-staging.192.168.0.110.nip.io
+  includeConfigRoute: true
+
+caddyfile: |
+  :3000 {
+      handle {
+          root * /usr/share/caddy
+
+          @static path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
+          header @static Cache-Control "public, max-age=31536000, immutable"
+
+          try_files {path} /index.html
+          file_server
+      }
+  }

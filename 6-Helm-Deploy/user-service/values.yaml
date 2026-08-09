@@ -1,0 +1,71 @@
+namespace: staging
+name: user-service
+component: user-service
+instance: staging-user-service
+managedBy: Helm
+
+replicaCount: 3
+revisionHistoryLimit: 3
+
+image:
+  repository: ghcr.io/keremar/todo-app-user-service
+  tag: 3bf8abf-v1.0-staging
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: github-registry-secret
+
+service:
+  port: 8001
+  targetPort: 8001
+  type: ClusterIP
+
+secretKey: dev-secret-key-change-in-production
+
+database:
+  enabled: true
+  name: user-db
+  image: postgres:15-alpine
+  imagePullPolicy: IfNotPresent
+  dbName: userdb
+  user: userservice
+  password: userpass
+  storageSize: 2Gi
+  storageClassName: longhorn-storageclass
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+otel:
+  endpoint: http://alloy.observability.svc.cluster.local:4318
+  protocol: http/protobuf
+  tracesExporter: otlp
+  metricsExporter: none
+  logsExporter: none
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+analysis:
+  name: check-user-service-readiness
+  metricName: health-check
+  path: /health
+  jsonPath: "{$.status}"
+  successCondition: result == "healthy"
+  interval: 5s
+  count: 3
+  failureLimit: 2
+  timeoutSeconds: 5
+
+probes:
+  livenessPath: /health
+  readinessPath: /health

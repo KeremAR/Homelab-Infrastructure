@@ -1,0 +1,46 @@
+{{- if .Values.hotReloadRbac.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: todo-service-config-reloader
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/component: config-reloader
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: todo-service-config-reloader
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/component: config-reloader
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: todo-service-config-reloader
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/component: config-reloader
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+subjects:
+  - kind: ServiceAccount
+    name: todo-service-config-reloader
+    namespace: {{ .Values.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: todo-service-config-reloader
+{{- end }}

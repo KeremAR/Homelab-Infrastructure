@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.name }}
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/component: {{ .Values.component }}
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  strategy:
+    canary:
+      canaryService: {{ .Values.name }}-canary
+      stableService: {{ .Values.name }}
+      steps:
+        - setWeight: 20
+        - analysis:
+            templates:
+              - templateName: {{ .Values.analysis.name }}
+            args:
+              - name: service-name
+                value: {{ .Values.name }}-canary
+              - name: port
+                value: "{{ .Values.service.port }}"
+        - pause: {}
+        - setWeight: 40
+        - pause: { duration: 10s }
+        - analysis:
+            templates:
+              - templateName: {{ .Values.analysis.name }}
+            args:
+              - name: service-name
+                value: {{ .Values.name }}-canary
+              - name: port
+                value: "{{ .Values.service.port }}"
+        - setWeight: 60
+        - pause: { duration: 10s }
+        - analysis:
+            templates:
+              - templateName: {{ .Values.analysis.name }}
+            args:
+              - name: service-name
+                value: {{ .Values.name }}-canary
+              - name: port
+                value: "{{ .Values.service.port }}"
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/instance: {{ .Values.instance }}
+        app.kubernetes.io/component: {{ .Values.component }}
+    spec:
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      securityContext:
+{{ toYaml .Values.securityContext | indent 8 }}
+      containers:
+        - name: {{ .Values.name }}
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+      volumes:
+        - name: caddy-config
+          configMap:
+            name: frontend-config

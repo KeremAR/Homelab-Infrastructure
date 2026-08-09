@@ -1,0 +1,25 @@
+namespace: production
+instance: production-user-service
+
+replicaCount: 1
+
+image:
+  tag: 3bf8abf-v1.0-prod
+
+database:
+  storageClassName: longhorn-storageclass
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

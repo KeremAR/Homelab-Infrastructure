@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ .Values.analysis.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+spec:
+  args:
+    - name: service-name
+    - name: port
+  metrics:
+    - name: {{ .Values.analysis.metricName }}
+      interval: {{ .Values.analysis.interval }}
+      count: {{ .Values.analysis.count }}
+      successCondition: {{ .Values.analysis.successCondition | quote }}
+      failureLimit: {{ .Values.analysis.failureLimit }}
+      provider:
+        web:
+          url: "http://{{ "{{args.service-name}}" }}.{{ .Values.namespace }}.svc.cluster.local:{{ "{{args.port}}" }}{{ .Values.analysis.path }}"
+          timeoutSeconds: {{ .Values.analysis.timeoutSeconds }}
+          jsonPath: {{ .Values.analysis.jsonPath | quote }}

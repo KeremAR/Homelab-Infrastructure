@@ -1,0 +1,69 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: {{ .Values.gateway.apiVersion }}
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.gateway.routeName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.parentName }}
+      namespace: {{ .Values.gateway.parentNamespace }}
+  hostnames:
+    - {{ .Values.gateway.hostname }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /register
+      backendRefs:
+        - name: user-service
+          port: 8001
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /login
+      backendRefs:
+        - name: user-service
+          port: 8001
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /users
+      backendRefs:
+        - name: user-service
+          port: 8001
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /todos
+      backendRefs:
+        - name: todo-service
+          port: 8002
+{{- if .Values.gateway.includeConfigRoute }}
+    - matches:
+        - path:
+            type: Exact
+            value: /config
+      backendRefs:
+        - name: todo-service
+          port: 8002
+{{- end }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /admin
+      backendRefs:
+        - name: user-service
+          port: 8001
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          port: 3000
+{{- end }}

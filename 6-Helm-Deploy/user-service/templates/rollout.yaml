@@ -1,0 +1,106 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.name }}
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/instance: {{ .Values.instance }}
+    app.kubernetes.io/component: {{ .Values.component }}
+    app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  strategy:
+    canary:
+      canaryService: {{ .Values.name }}-canary
+      stableService: {{ .Values.name }}
+      steps:
+        - setWeight: 20
+        - analysis:
+            templates:
+              - templateName: {{ .Values.analysis.name }}
+            args:
+              - name: service-name
+                value: {{ .Values.name }}-canary
+              - name: port
+                value: "{{ .Values.service.port }}"
+        - pause: {}
+        - setWeight: 40
+        - pause: { duration: 10s }
+        - analysis:
+            templates:
+              - templateName: {{ .Values.analysis.name }}
+            args:
+              - name: service-name
+                value: {{ .Values.name }}-canary
+              - name: port
+                value: "{{ .Values.service.port }}"
+        - setWeight: 60
+        - pause: { duration: 10s }
+        - analysis:
+            templates:
+              - templateName: {{ .Values.analysis.name }}
+            args:
+              - name: service-name
+                value: {{ .Values.name }}-canary
+              - name: port
+                value: "{{ .Values.service.port }}"
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/instance: {{ .Values.instance }}
+        app.kubernetes.io/component: {{ .Values.component }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.service.port }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      containers:
+        - name: {{ .Values.name }}
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+          env:
+            - name: SECRET_KEY
+              value: {{ .Values.secretKey | quote }}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.database.user }}:{{ .Values.database.password }}@{{ .Values.database.name }}:5432/{{ .Values.database.dbName }}"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.otel.protocol | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.name | quote }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace={{ .Values.namespace }},service.version=latest,deployment.environment={{ .Values.namespace }}"
+            - name: OTEL_TRACES_EXPORTER
+              value: {{ .Values.otel.tracesExporter | quote }}
+            - name: OTEL_METRICS_EXPORTER
+              value: {{ .Values.otel.metricsExporter | quote }}
+            - name: OTEL_LOGS_EXPORTER
+              value: {{ .Values.otel.logsExporter | quote }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.livenessPath }}
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readinessPath }}
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+{{ toYaml .Values.resources | indent 12 }}

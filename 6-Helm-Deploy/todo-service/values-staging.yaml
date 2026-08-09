@@ -1,0 +1,33 @@
+namespace: staging
+instance: staging-todo-service
+
+replicaCount: 3
+
+image:
+  tag: 5ca78aa-v1.0.0-staging
+
+runtimeConfig:
+  enabled: true
+  message: Staging config version 1 is active
+  version: 2
+
+hotReloadRbac:
+  enabled: true
+
+database:
+  storageClassName: longhorn-storageclass
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

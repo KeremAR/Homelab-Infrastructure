@@ -1,0 +1,6 @@
+apiVersion: v2
+name: todo-service
+description: Helm chart for the todo-service Rollout and PostgreSQL StatefulSet
+type: application
+version: 0.1.0
+appVersion: "1.0"

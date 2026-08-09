@@ -1,0 +1,20 @@
+namespace: staging
+instance: staging-frontend
+
+replicaCount: 3
+
+image:
+  tag: 5ca78aa-v1.0-staging
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+gateway:
+  routeName: staging-frontend-route
+  hostname: todo-app-staging.192.168.0.110.nip.io
+  includeConfigRoute: true

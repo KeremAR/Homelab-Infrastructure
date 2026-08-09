@@ -1,0 +1,86 @@
+namespace: staging
+name: todo-service
+component: todo-service
+instance: staging-todo-service
+managedBy: Helm
+
+replicaCount: 3
+revisionHistoryLimit: 3
+
+image:
+  repository: ghcr.io/keremar/todo-app-todo-service
+  tag: 5ca78aa-v1.0.0-staging
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: github-registry-secret
+
+service:
+  port: 8002
+  targetPort: 8002
+  type: ClusterIP
+  annotations:
+    blackbox.prometheus.io/scrape: "true"
+    blackbox.prometheus.io/path: "/ready"
+    blackbox.prometheus.io/port: "8002"
+    blackbox.prometheus.io/module: "http_2xx"
+
+secretKey: dev-secret-key-change-in-production
+userServiceUrl: http://user-service:8001
+
+runtimeConfig:
+  enabled: true
+  message: Staging config version 1 is active
+  version: 2
+  hotReloadLabel: todo-service-hot-reload
+
+hotReloadRbac:
+  enabled: true
+
+database:
+  enabled: true
+  name: todo-db
+  image: postgres:15-alpine
+  imagePullPolicy: IfNotPresent
+  dbName: tododb
+  user: todoservice
+  password: todopass
+  storageSize: 2Gi
+  storageClassName: longhorn-storageclass
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+otel:
+  endpoint: http://alloy.observability.svc.cluster.local:4318
+  protocol: http/protobuf
+  tracesExporter: otlp
+  metricsExporter: none
+  logsExporter: none
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+analysis:
+  name: check-todo-service-readiness
+  metricName: readiness-check
+  path: /ready
+  jsonPath: "{$.status}"
+  successCondition: result == "ready"
+  interval: 5s
+  count: 3
+  failureLimit: 2
+  timeoutSeconds: 5
+
+probes:
+  livenessPath: /health
+  readinessPath: /ready
