@@ -33,6 +33,7 @@ This folder contains the Jenkins install manifests:
   jenkins-values.yaml
   jenkins-httproute.yaml
   ci-python-test-runner.Dockerfile
+  kubernetes-tools.Dockerfile
 ```
 
 `jenkins-values.yaml` is used by the Jenkins Helm chart. The other YAML files are applied with `kubectl`.
@@ -299,9 +300,10 @@ create a narrower deploy-only kubeconfig instead of using an admin kubeconfig.
 
 ## 7. Install Jenkins With Helm
 
-Before installing Jenkins, build and push the CI runner image referenced by the shared library pod template.
+Before installing Jenkins, build and push the custom images referenced by the
+shared library pod templates.
 
-Build:
+Build the CI Python runner:
 
 ```bash
 docker build \
@@ -322,6 +324,33 @@ docker push ghcr.io/keremar/ci-python-test-runner:py3.11-v1
 ```
 
 This image contains common CI tools only. Service dependencies are still installed later into the PVC-backed venv cache.
+
+Build the Kubernetes tools image used by manual release deploy jobs:
+
+```bash
+docker build \
+  -f 4-Jenkins-Setup/kubernetes-tools.Dockerfile \
+  -t ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1 .
+```
+
+Push:
+
+```bash
+docker push ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1
+```
+
+This image contains:
+
+```text
+sh/bash
+kubectl
+argocd
+kubectl argo rollouts
+```
+
+The release pod uses a `kubernetes` container backed by our `kubernetes-tools`
+image. `deployWithKubectl()` uses this container by default, and the same image
+can serve future ArgoCD release steps without adding another Jenkins container.
 
 Add the Jenkins Helm repo:
 
@@ -350,13 +379,15 @@ kubectl get pvc -n jenkins
 
 Jenkins controller should become `Running`.
 
-Important: the shared library pod template currently references this CI agent image:
+Important: the shared library pod templates currently reference these custom images:
 
 ```text
 ghcr.io/keremar/ci-python-test-runner:py3.11-v1
+ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1
 ```
 
-That image must exist and Jenkins must be able to pull it. If it does not exist yet, either build/push it first or temporarily change the agent image.
+These images must exist and Jenkins must be able to pull them. If they do not
+exist yet, either build/push them first or temporarily change the agent images.
 
 ---
 
