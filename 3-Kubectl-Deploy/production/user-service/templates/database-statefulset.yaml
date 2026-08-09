@@ -77,7 +77,8 @@ spec:
   - metadata:
       name: postgres-storage
     spec:
+      storageClassName: longhorn-storageclass
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 10Gi
+          storage: 2Gi
