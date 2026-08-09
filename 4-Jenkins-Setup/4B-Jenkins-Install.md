@@ -339,10 +339,10 @@ Push:
 docker push ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1
 ```
 
-This image contains:
+This lightweight Alpine-based image contains:
 
 ```text
-sh/bash
+sh
 kubectl
 argocd
 kubectl argo rollouts
@@ -351,6 +351,8 @@ kubectl argo rollouts
 The release pod uses a `kubernetes` container backed by our `kubernetes-tools`
 image. `deployWithKubectl()` uses this container by default, and the same image
 can serve future ArgoCD release steps without adding another Jenkins container.
+It intentionally does not include Git or Docker; those jobs run in the `jnlp`
+and `docker` containers.
 
 Add the Jenkins Helm repo:
 

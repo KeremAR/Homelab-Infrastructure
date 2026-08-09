@@ -25,8 +25,6 @@ spec:
         app.kubernetes.io/instance: production-user-service
         app.kubernetes.io/component: database
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: k3s-worker
       containers:
       - name: postgres
         image: postgres:15-alpine
