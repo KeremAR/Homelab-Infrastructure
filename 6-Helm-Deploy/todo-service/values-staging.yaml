@@ -4,6 +4,7 @@ instance: staging-todo-service
 replicaCount: 3
 
 image:
+  repository: ghcr.io/keremar/todo-app-todo-service
   tag: 5ca78aa-v1.0.0-staging
 
 runtimeConfig:

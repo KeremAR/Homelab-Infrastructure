@@ -4,6 +4,7 @@ instance: production-user-service
 replicaCount: 1
 
 image:
+  repository: ghcr.io/keremar/todo-app-user-service
   tag: 3bf8abf-v1.0-prod
 
 database:

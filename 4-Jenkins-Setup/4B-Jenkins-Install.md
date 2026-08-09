@@ -330,13 +330,13 @@ Build the Kubernetes tools image used by manual release deploy jobs:
 ```bash
 docker build \
   -f 4-Jenkins-Setup/kubernetes-tools.Dockerfile \
-  -t ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1 .
+  -t ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-helm-3.20.1-argocd-3.4.2-rollouts-1.9.1 .
 ```
 
 Push:
 
 ```bash
-docker push ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1
+docker push ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-helm-3.20.1-argocd-3.4.2-rollouts-1.9.1
 ```
 
 This lightweight Alpine-based image contains:
@@ -344,13 +344,15 @@ This lightweight Alpine-based image contains:
 ```text
 sh
 kubectl
+helm
 argocd
 kubectl argo rollouts
 ```
 
 The release pod uses a `kubernetes` container backed by our `kubernetes-tools`
-image. `deployWithKubectl()` uses this container by default, and the same image
-can serve future ArgoCD release steps without adding another Jenkins container.
+image. `deployWithKubectl()` and `deployWithHelm()` use this container by
+default, and the same image can serve future ArgoCD release steps without adding
+another Jenkins container.
 It intentionally does not include Git or Docker; those jobs run in the `jnlp`
 and `docker` containers.
 
@@ -385,7 +387,7 @@ Important: the shared library pod templates currently reference these custom ima
 
 ```text
 ghcr.io/keremar/ci-python-test-runner:py3.11-v1
-ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-argocd-3.4.2-rollouts-1.9.1
+ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-helm-3.20.1-argocd-3.4.2-rollouts-1.9.1
 ```
 
 These images must exist and Jenkins must be able to pull them. If they do not

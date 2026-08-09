@@ -60,7 +60,8 @@ references from changing during the migration.
 
 `values.yaml` contains shared defaults. `values-staging.yaml` and
 `values-production.yaml` keep environment-specific choices visible: namespace,
-replica count, image tag, resources, hostnames, and database storage class.
+replica count, image repository and tag, resources, hostnames, and database
+storage class.
 
 The chart value is named `replicaCount` because that is the common Helm chart
 convention. It renders to the Kubernetes field named `spec.replicas`.
