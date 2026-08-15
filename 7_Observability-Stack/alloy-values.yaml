@@ -1,5 +1,10 @@
 controller:
   type: daemonset
+  # Run one Alloy pod on the tainted control-plane node as well as on workers.
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
   volumes:
     extra:
       - name: proc
@@ -11,12 +16,34 @@ controller:
       - name: root
         hostPath:
           path: /
+      # Merge the three signal-specific ConfigMaps into one directory.
+      # Alloy accepts a directory and loads every *.alloy file in it.
+      - name: alloy-signal-configs
+        projected:
+          sources:
+            - configMap:
+                name: alloy-metrics-config
+                items:
+                  - key: metrics.alloy
+                    path: metrics.alloy
+            - configMap:
+                name: alloy-logs-config
+                items:
+                  - key: logs.alloy
+                    path: logs.alloy
+            - configMap:
+                name: alloy-traces-config
+                items:
+                  - key: traces.alloy
+                    path: traces.alloy
 
 alloy:
   configMap:
     create: false
-    name: alloy-full-config
-    key: config.alloy
+    # The chart requires one primary ConfigMap. Its key points the fixed
+    # /etc/alloy/<key> run argument at the projected configuration directory.
+    name: alloy-bootstrap-config
+    key: ../alloy-configs
   clustering:
     enabled: true
     portName: http
@@ -34,6 +61,9 @@ alloy:
         mountPath: /host/root
         readOnly: true
         mountPropagation: HostToContainer
+      - name: alloy-signal-configs
+        mountPath: /etc/alloy-configs
+        readOnly: true
   extraPorts:
     - name: otlp-grpc
       port: 4317
@@ -46,3 +76,8 @@ alloy:
 
 rbac:
   create: true
+
+# The chart reloader watches only its primary ConfigMap mount, not the
+# projected signal ConfigMaps. Restart the DaemonSet after changing them.
+configReloader:
+  enabled: false

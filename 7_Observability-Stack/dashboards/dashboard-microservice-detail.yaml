@@ -295,15 +295,15 @@ data:
           }
         },
         {
-          "id": 7.1,
-          "title": "🌐 Duration - End-to-End Latency (Network Included)",
+          "id": 14,
+          "title": "🌐 Duration - In-Cluster Probe Latency",
           "type": "timeseries",
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
           "targets": [
             {
               "expr": "probe_duration_seconds{service=\"$service\", namespace=\"$namespace\"}",
               "refId": "A",
-              "legendFormat": "End-to-End (Blackbox)"
+              "legendFormat": "Blackbox Probe (In-Cluster)"
             },
             {
               "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$service.*\"}[5m])) by (le))",
@@ -440,8 +440,8 @@ data:
           "type": "text",
           "gridPos": {"h": 4, "w": 24, "x": 0, "y": 38},
           "options": {
-            "mode": "markdown",
-            "content": "### 🔍 Distributed Tracing\\n\\n**Service:** `$service`\\n\\n**Namespace:** `$namespace`\\n\\n[🔗 Open Jaeger UI](http://jaeger.192.168.0.110.nip.io/search?service=$service)\\n\\n**Internal Service:** jaeger.observability.svc.cluster.local:16686"
+            "mode": "html",
+            "content": "<h3>🔍 Distributed Tracing</h3><p><strong>Service:</strong> <code>$service</code></p><p><strong>Namespace:</strong> <code>$namespace</code></p><p><a href=\"http://jaeger.192.168.0.110.nip.io/search?service=$service\" target=\"_blank\" rel=\"noopener noreferrer\">🔗 Open Jaeger UI</a></p><p><strong>Internal Service:</strong> <code>jaeger.observability.svc.cluster.local:16686</code></p>"
           }
         },
         {

@@ -24,6 +24,9 @@ kubectl get nodes
 
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# Grafana and Loki community charts
+helm repo add grafana-community https://grafana-community.github.io/helm-charts
+# Alloy is still published from Grafana's product repository
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
 helm repo update
@@ -76,13 +79,21 @@ helm upgrade --install blackbox-exporter prometheus-community/prometheus-blackbo
   --wait
 ```
 
+Expose the Prometheus web interface through the shared Gateway:
+
+```bash
+kubectl apply -f 7_Observability-Stack/metrics/prometheus-httproute.yaml
+```
+
+Prometheus: <http://prometheus.192.168.0.110.nip.io>
+
 ## 4. Install Loki
 
 This homelab uses a persistent, single-binary Loki deployment. It is simple but
 is not an HA Loki architecture.
 
 ```bash
-helm upgrade --install loki grafana/loki \
+helm upgrade --install loki grafana-community/loki \
   --namespace observability \
   --values 7_Observability-Stack/logs/loki-values.yaml \
   --wait
@@ -100,19 +111,52 @@ helm upgrade --install jaeger jaegertracing/jaeger \
   --wait
 ```
 
+Expose the Jaeger query UI through the shared Gateway:
+
+```bash
+kubectl apply -f 7_Observability-Stack/traces/jaeger-httproute.yaml
+```
+
+Jaeger: <http://jaeger.192.168.0.110.nip.io>
+
 ## 6. Install Grafana Alloy
 
 Alloy runs once per node and sends metrics to Prometheus, logs to Loki, and
-traces to Jaeger.
+traces to Jaeger. Its configuration is kept in three signal-specific
+ConfigMaps. Kubernetes projects them into one directory, which Alloy loads as
+a single configuration.
 
 ```bash
-kubectl apply -f 7_Observability-Stack/alloy-config.yaml
+kubectl apply -f 7_Observability-Stack/alloy-bootstrap-config.yaml
+kubectl apply -f 7_Observability-Stack/metrics/alloy-metrics-config.yaml
+kubectl apply -f 7_Observability-Stack/logs/alloy-logs-config.yaml
+kubectl apply -f 7_Observability-Stack/traces/alloy-traces-config.yaml
 
 helm upgrade --install alloy grafana/alloy \
   --namespace observability \
   --values 7_Observability-Stack/alloy-values.yaml \
   --wait
 ```
+
+The Helm chart's config reloader only watches its primary ConfigMap and does
+not watch the projected signal ConfigMaps. After editing one of them, apply it
+and restart Alloy:
+
+```bash
+kubectl apply -f 7_Observability-Stack/metrics/alloy-metrics-config.yaml
+kubectl apply -f 7_Observability-Stack/logs/alloy-logs-config.yaml
+kubectl apply -f 7_Observability-Stack/traces/alloy-traces-config.yaml
+kubectl rollout restart daemonset/alloy -n observability
+kubectl rollout status daemonset/alloy -n observability
+```
+
+Expose the Alloy UI through the shared Gateway:
+
+```bash
+kubectl apply -f 7_Observability-Stack/alloy-httproute.yaml
+```
+
+Alloy: <http://alloy.192.168.0.110.nip.io>
 
 Applications can send OTLP data to:
 
@@ -127,11 +171,19 @@ Datasource UIDs are fixed as `prometheus` and `loki`, so dashboard manifests do
 not need a script to discover generated UIDs.
 
 ```bash
-helm upgrade --install grafana grafana/grafana \
+helm upgrade --install grafana grafana-community/grafana \
   --namespace observability \
   --values 7_Observability-Stack/grafana-values.yaml \
   --wait
 ```
+
+Expose the Grafana UI through the shared Gateway:
+
+```bash
+kubectl apply -f 7_Observability-Stack/grafana-httproute.yaml
+```
+
+Grafana: <http://grafana.192.168.0.110.nip.io>
 
 ## 8. Install the dashboards
 
@@ -145,21 +197,7 @@ kubectl apply -f 7_Observability-Stack/dashboards/dashboard-microservice-detail.
 The Grafana sidecar loads ConfigMaps labeled `grafana_dashboard: "1"`
 automatically; Grafana does not need to be restarted.
 
-## 9. Expose the web interfaces
-
-```bash
-kubectl apply -f 7_Observability-Stack/metrics/prometheus-httproute.yaml
-kubectl apply -f 7_Observability-Stack/grafana-httproute.yaml
-kubectl apply -f 7_Observability-Stack/alloy-httproute.yaml
-kubectl apply -f 7_Observability-Stack/traces/jaeger-httproute.yaml
-```
-
-- Grafana: <http://grafana.192.168.0.110.nip.io>
-- Prometheus: <http://prometheus.192.168.0.110.nip.io>
-- Alloy: <http://alloy.192.168.0.110.nip.io>
-- Jaeger: <http://jaeger.192.168.0.110.nip.io>
-
-## 10. Verify the installation
+## 9. Verify the installation
 
 ```bash
 kubectl get pods,pvc -n observability

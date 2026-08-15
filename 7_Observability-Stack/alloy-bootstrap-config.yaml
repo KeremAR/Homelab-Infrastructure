@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-bootstrap-config
+  namespace: observability
+data:
+  # The chart requires a primary ConfigMap even though Alloy runs the
+  # projected /etc/alloy-configs directory configured in alloy-values.yaml.
+  placeholder: "Signal configurations are stored in separate ConfigMaps."

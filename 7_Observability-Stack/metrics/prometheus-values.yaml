@@ -12,16 +12,30 @@ server:
       cpu: "1"
       memory: 2Gi
 
-serverFiles:
-  prometheus.yml:
-    rule_files:
-      - /etc/config/recording_rules.yml
-      - /etc/config/alerting_rules.yml
-    scrape_configs:
-      - job_name: prometheus-self
-        static_configs:
-          - targets:
-              - localhost:9090
+# Prometheus chart 29.x enables Kubernetes discovery jobs by default. Alloy is
+# the collector in this stack, so keep only Prometheus self-monitoring here.
+# Otherwise cAdvisor metrics are ingested once by Prometheus and once by Alloy.
+scrapeConfigs:
+  prometheus:
+    enabled: true
+  kubernetes-api-servers:
+    enabled: false
+  kubernetes-nodes:
+    enabled: false
+  kubernetes-nodes-cadvisor:
+    enabled: false
+  kubernetes-service-endpoints:
+    enabled: false
+  kubernetes-service-endpoints-slow:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kubernetes-services:
+    enabled: false
+  kubernetes-pods:
+    enabled: false
+  kubernetes-pods-slow:
+    enabled: false
 
 alertmanager:
   enabled: false

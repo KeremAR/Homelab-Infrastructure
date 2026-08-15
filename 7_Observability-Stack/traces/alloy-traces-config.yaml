@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-traces-config
+  namespace: observability
+data:
+  traces.alloy: |
+    // OPENTELEMETRY TRACING CONFIGURATION
+    // ==========================================
+
+    // --- 7. OTEL RECEIVER: Accept traces from Python services ---
+    otelcol.receiver.otlp "default" {
+      // gRPC endpoint
+      grpc {
+        endpoint = "0.0.0.0:4317"
+      }
+
+      // HTTP endpoint
+      http {
+        endpoint = "0.0.0.0:4318"
+      }
+
+      output {
+        traces  = [otelcol.exporter.otlp.jaeger.input]
+      }
+    }
+
+    // --- 8. OTEL EXPORTER: Forward traces to Jaeger ---
+    otelcol.exporter.otlp "jaeger" {
+      client {
+        endpoint = "jaeger.observability.svc.cluster.local:4317"
+        tls {
+          insecure = true
+        }
+      }
+    }
