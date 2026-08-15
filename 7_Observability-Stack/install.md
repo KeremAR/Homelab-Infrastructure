@@ -31,13 +31,13 @@ helm repo update
 
 ## 2. Create the namespace, storage, and Grafana Secret
 
-Prometheus and Grafana use explicitly created PVCs. Loki's StatefulSet creates
-its own 10 Gi PVC from `longhorn-storageclass` through
-`singleBinary.persistence`.
+Prometheus and Grafana use explicitly created PVCs. Loki's chart creates its
+own 2 Gi PVC from `longhorn-storageclass` through `singleBinary.persistence`.
 
 ```bash
 kubectl apply -f 7_Observability-Stack/namespace.yaml
-kubectl apply -f 7_Observability-Stack/observability-pvcs.yaml
+kubectl apply -f 7_Observability-Stack/metrics/prometheus-pvc.yaml
+kubectl apply -f 7_Observability-Stack/grafana-pvc.yaml
 ```
 
 Add this variable to the repository root `.env` file:
@@ -62,17 +62,17 @@ installed separately.
 ```bash
 helm upgrade --install prometheus prometheus-community/prometheus \
   --namespace observability \
-  --values 7_Observability-Stack/prometheus-values.yaml \
+  --values 7_Observability-Stack/metrics/prometheus-values.yaml \
   --wait
 
 helm upgrade --install kube-state-metrics prometheus-community/kube-state-metrics \
   --namespace observability \
-  --values 7_Observability-Stack/kube-state-metrics-values.yaml \
+  --values 7_Observability-Stack/metrics/kube-state-metrics-values.yaml \
   --wait
 
 helm upgrade --install blackbox-exporter prometheus-community/prometheus-blackbox-exporter \
   --namespace observability \
-  --values 7_Observability-Stack/blackbox-exporter-values.yaml \
+  --values 7_Observability-Stack/metrics/blackbox-exporter-values.yaml \
   --wait
 ```
 
@@ -84,7 +84,7 @@ is not an HA Loki architecture.
 ```bash
 helm upgrade --install loki grafana/loki \
   --namespace observability \
-  --values 7_Observability-Stack/loki-values.yaml \
+  --values 7_Observability-Stack/logs/loki-values.yaml \
   --wait
 ```
 
@@ -96,7 +96,7 @@ v2 Service exposes both OTLP and the query UI.
 ```bash
 helm upgrade --install jaeger jaegertracing/jaeger \
   --namespace observability \
-  --values 7_Observability-Stack/jaeger-values.yaml \
+  --values 7_Observability-Stack/traces/jaeger-values.yaml \
   --wait
 ```
 
@@ -136,10 +136,10 @@ helm upgrade --install grafana grafana/grafana \
 ## 8. Install the dashboards
 
 ```bash
-kubectl apply -f 7_Observability-Stack/dashboard-memory-analysis.yaml
-kubectl apply -f 7_Observability-Stack/dashboard-global-sre-overview.yaml
-kubectl apply -f 7_Observability-Stack/dashboard-infrastructure-cluster.yaml
-kubectl apply -f 7_Observability-Stack/dashboard-microservice-detail.yaml
+kubectl apply -f 7_Observability-Stack/dashboards/dashboard-memory-analysis.yaml
+kubectl apply -f 7_Observability-Stack/dashboards/dashboard-global-sre-overview.yaml
+kubectl apply -f 7_Observability-Stack/dashboards/dashboard-infrastructure-cluster.yaml
+kubectl apply -f 7_Observability-Stack/dashboards/dashboard-microservice-detail.yaml
 ```
 
 The Grafana sidecar loads ConfigMaps labeled `grafana_dashboard: "1"`
@@ -148,10 +148,10 @@ automatically; Grafana does not need to be restarted.
 ## 9. Expose the web interfaces
 
 ```bash
-kubectl apply -f 7_Observability-Stack/prometheus-httproute.yaml
+kubectl apply -f 7_Observability-Stack/metrics/prometheus-httproute.yaml
 kubectl apply -f 7_Observability-Stack/grafana-httproute.yaml
 kubectl apply -f 7_Observability-Stack/alloy-httproute.yaml
-kubectl apply -f 7_Observability-Stack/jaeger-httproute.yaml
+kubectl apply -f 7_Observability-Stack/traces/jaeger-httproute.yaml
 ```
 
 - Grafana: <http://grafana.192.168.0.110.nip.io>

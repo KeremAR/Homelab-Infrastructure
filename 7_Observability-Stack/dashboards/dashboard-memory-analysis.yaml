@@ -1,0 +1,137 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memory-analysis-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  memory-analysis.json: |
+    {
+      "title": "Dynamic Node Memory Analysis",
+      "uid": "cluster-memory-analysis",
+      "tags": ["memory", "kubernetes", "troubleshooting", "nodes"],
+      "timezone": "browser",
+      "schemaVersion": 38,
+      "version": 2,
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "node",
+            "type": "query",
+            "label": "Nodes",
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "query": "label_values(node_uname_info, instance)",
+            "refresh": 1,
+            "includeAll": true,
+            "multi": true,
+            "sort": 1,
+            "current": {
+              "selected": true,
+              "text": ["All"],
+              "value": ["$__all"]
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "🧠 $node - Memory Usage",
+          "type": "stat",
+          "gridPos": {"h": 5, "w": 12, "x": 0, "y": 0},
+          "repeat": "node",
+          "repeatDirection": "h",
+          "maxPerRow": 2,
+          "targets": [
+            {
+              "expr": "100 * (1 - (node_memory_MemAvailable_bytes{instance=\"$node\"} / node_memory_MemTotal_bytes{instance=\"$node\"}))",
+              "refId": "A",
+              "legendFormat": "$node"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "green"},
+                  {"value": 75, "color": "orange"},
+                  {"value": 90, "color": "red"}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "🏆 $node - Top Memory-Consuming Pods",
+          "type": "table",
+          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 10},
+          "repeat": "node",
+          "repeatDirection": "h",
+          "maxPerRow": 2,
+          "targets": [
+            {
+              "expr": "topk(20, sum(container_memory_working_set_bytes{node=\"$node\", container!=\"\", container!=\"POD\"}) by (namespace, pod)) / 1024 / 1024",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {"Time": true, "__name__": true},
+                "renameByName": {
+                  "Value": "Memory (MB)",
+                  "pod": "Pod Name",
+                  "namespace": "Namespace"
+                }
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "fields": {},
+                "sort": [{"field": "Memory (MB)", "desc": true}]
+              }
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "mbytes"}}
+        },
+        {
+          "id": 3,
+          "title": "📈 $node - Top Five Pods Over Time",
+          "type": "timeseries",
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 30},
+          "repeat": "node",
+          "repeatDirection": "h",
+          "maxPerRow": 2,
+          "targets": [
+            {
+              "expr": "topk(5, sum(container_memory_working_set_bytes{node=\"$node\", container!=\"\", container!=\"POD\"}) by (namespace, pod)) / 1024 / 1024",
+              "refId": "A",
+              "legendFormat": "{{pod}} ({{namespace}})"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "mbytes",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 10
+              }
+            }
+          }
+        }
+      ]
+    }

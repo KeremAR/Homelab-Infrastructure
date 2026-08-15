@@ -10,16 +10,3 @@ spec:
     requests:
       storage: 10Gi
   storageClassName: longhorn-storageclass
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: grafana-data
-  namespace: observability
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
-  storageClassName: longhorn-storageclass

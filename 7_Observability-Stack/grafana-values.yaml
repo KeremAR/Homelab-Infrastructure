@@ -3,6 +3,9 @@ admin:
   userKey: admin-user
   passwordKey: admin-password
 
+service:
+  type: ClusterIP
+
 persistence:
   enabled: true
   existingClaim: grafana-data
@@ -19,6 +22,10 @@ sidecar:
     label: grafana_dashboard
     labelValue: "1"
     searchNamespace: observability
+    folder: /tmp/dashboards
+    folderAnnotation: grafana_folder
+    provider:
+      foldersFromFilesStructure: true
 
 datasources:
   datasources.yaml:
@@ -28,14 +35,14 @@ datasources:
         uid: prometheus
         type: prometheus
         access: proxy
-        url: http://prometheus-server.observability.svc.cluster.local
+        url: http://prometheus-server.observability.svc.cluster.local:80
         isDefault: true
         editable: false
       - name: Loki
         uid: loki
         type: loki
         access: proxy
-        url: http://loki-gateway.observability.svc.cluster.local
+        url: http://loki-gateway.observability.svc.cluster.local:80
         editable: false
 
 resources:

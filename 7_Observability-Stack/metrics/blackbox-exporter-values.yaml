@@ -9,6 +9,7 @@ config:
           - HTTP/2.0
         valid_status_codes: []
         method: GET
+        # Follow HTTP 3xx responses and evaluate the final destination.
         follow_redirects: true
         preferred_ip_protocol: ip4
     http_post_2xx:
@@ -20,11 +21,18 @@ config:
           - HTTP/2.0
         valid_status_codes: []
         method: POST
+        # Follow HTTP 3xx responses and evaluate the final destination.
         follow_redirects: true
         preferred_ip_protocol: ip4
 
 serviceMonitor:
   enabled: false
+
+# Alloy discovers only pods explicitly marked with prometheus.io/scrape=true.
+# Keep Blackbox Exporter's own pod out of that generic scrape path; Alloy uses
+# the exporter's /probe endpoint explicitly instead.
+podAnnotations:
+  prometheus.io/scrape: "false"
 
 resources:
   requests:

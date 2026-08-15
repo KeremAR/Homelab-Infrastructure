@@ -1,0 +1,26 @@
+# Jaeger chart v4 deploys the unified Jaeger v2 binary. OTLP, the query UI, and
+# in-memory trace storage are already part of that single deployment. The old
+# allInOne, agent, collector, query, storage, and provisionDataStore keys belong
+# to the Jaeger v1 chart model and must not be carried into this values file.
+jaeger:
+  replicas: 1
+  ingress:
+    enabled: false
+  httproute:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+spark:
+  enabled: false
+esIndexCleaner:
+  enabled: false
+esRollover:
+  enabled: false
+esLookback:
+  enabled: false
