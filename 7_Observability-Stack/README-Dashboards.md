@@ -4,6 +4,24 @@
 Dashboard definitions are declarative ConfigMaps in the `dashboards/`
 directory. Grafana's dashboard sidecar loads them automatically.
 
+### Kubernetes Control Plane & Networking
+
+**Manifest:** `dashboards/dashboard-kubernetes-components.yaml`
+
+**Purpose:** Monitor the Kubernetes components collected directly by Alloy.
+The dashboard discovers nodes and component instances dynamically and covers:
+
+- Scrape health for API server, scheduler, controller-manager, etcd,
+  kube-proxy, and CoreDNS
+- API server request rate and p99 latency
+- Scheduler pending pods, attempt results, and p99 latency
+- Controller-manager workqueue depth
+- etcd leader state, database size, WAL fsync latency, and failed proposals
+- kube-proxy rule synchronization and pending changes
+- CoreDNS response codes and request latency
+
+---
+
 ### Dynamic Node Memory Analysis
 
 **Manifest:** `dashboards/dashboard-memory-analysis.yaml`

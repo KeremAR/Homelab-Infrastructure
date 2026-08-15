@@ -20,6 +20,91 @@ kubectl get gateway shared-gateway -n nginx-gateway
 kubectl get nodes
 ```
 
+## Expose Kubernetes component metrics
+
+The API server and CoreDNS metrics are already reachable through Kubernetes
+Services. kube-scheduler, kube-controller-manager, etcd, and kube-proxy use
+loopback metrics addresses by default, which normal Alloy pods cannot reach.
+
+> These changes expose metrics ports on the node network. Use them only on a
+> trusted homelab network, or restrict TCP ports `10249`, `10257`, `10259`, and
+> `2381` to the cluster node and Pod CIDRs with a firewall.
+
+On every control-plane node, back up and edit the static Pod manifests:
+
+```bash
+sudo install -d -m 0700 /etc/kubernetes/manifest-backups
+sudo cp /etc/kubernetes/manifests/kube-scheduler.yaml \
+  /etc/kubernetes/manifest-backups/kube-scheduler.yaml.before-metrics
+sudo cp /etc/kubernetes/manifests/kube-controller-manager.yaml \
+  /etc/kubernetes/manifest-backups/kube-controller-manager.yaml.before-metrics
+sudo cp /etc/kubernetes/manifests/etcd.yaml \
+  /etc/kubernetes/manifest-backups/etcd.yaml.before-metrics
+
+sudo sed -i \
+  's/--bind-address=127.0.0.1/--bind-address=0.0.0.0/' \
+  /etc/kubernetes/manifests/kube-scheduler.yaml \
+  /etc/kubernetes/manifests/kube-controller-manager.yaml
+
+sudo sed -i \
+  's#--listen-metrics-urls=http://127.0.0.1:2381#--listen-metrics-urls=http://0.0.0.0:2381#' \
+  /etc/kubernetes/manifests/etcd.yaml
+```
+
+Do not keep backup files inside `/etc/kubernetes/manifests`; kubelet scans all
+non-hidden files in that directory and may interpret a backup as another
+static Pod manifest.
+
+Kubelet notices these manifest changes and restarts the three static Pods.
+This briefly interrupts the affected components, so change one control-plane
+node at a time in an HA cluster. Verify the listeners from the node:
+
+These are node-local static manifest changes. If Cluster API replaces a
+control-plane VM, repeat this section for the new node or add the equivalent
+component `extraArgs` to the `KubeadmControlPlane` configuration before
+provisioning it.
+
+```bash
+sudo ss -lntp | grep -E ':(2381|10257|10259)\b'
+```
+
+Edit the kube-proxy ConfigMap:
+
+```bash
+kubectl edit configmap kube-proxy -n kube-system
+```
+
+Inside `data.config.conf`, change only `metricsBindAddress`:
+
+```yaml
+data:
+  config.conf: |-
+    # Other existing KubeProxyConfiguration fields remain unchanged.
+    metricsBindAddress: "0.0.0.0:10249"
+```
+
+Restart kube-proxy so every node uses the new value:
+
+```bash
+kubectl rollout restart daemonset/kube-proxy -n kube-system
+kubectl rollout status daemonset/kube-proxy -n kube-system
+```
+
+The Alloy configuration scrapes these endpoints as follows:
+
+| Component | Target |
+|---|---|
+| kube-apiserver | `https://kubernetes.default.svc:443/metrics` |
+| kube-proxy | `<node-internal-ip>:10249/metrics` |
+| kube-scheduler | `https://<control-plane-ip>:10259/metrics` |
+| kube-controller-manager | `https://<control-plane-ip>:10257/metrics` |
+| etcd | `http://<control-plane-ip>:2381/metrics` |
+
+The scheduler and controller-manager generate self-signed serving
+certificates by default. Their Alloy scrape blocks therefore skip serving
+certificate verification but still authenticate with Alloy's ServiceAccount
+token. API server verification continues to use the cluster CA.
+
 ## 1. Add the Helm repositories
 
 ```bash
@@ -126,6 +211,13 @@ traces to Jaeger. Its configuration is kept in three signal-specific
 ConfigMaps. Kubernetes projects them into one directory, which Alloy loads as
 a single configuration.
 
+Pod Discovery and EndpointSlice Discovery are both enabled. They do not
+inherently duplicate data, but the same workload would be scraped twice if
+both its Pod template and Service had `prometheus.io/scrape: "true"`. Use only
+one annotation level per workload. This stack uses Pod annotations for
+kube-state-metrics and a Service annotation for CoreDNS. An annotated Service
+must expose its metrics port with the name `metrics`.
+
 ```bash
 kubectl apply -f 7_Observability-Stack/alloy-bootstrap-config.yaml
 kubectl apply -f 7_Observability-Stack/metrics/alloy-metrics-config.yaml
@@ -192,6 +284,7 @@ kubectl apply -f 7_Observability-Stack/dashboards/dashboard-memory-analysis.yaml
 kubectl apply -f 7_Observability-Stack/dashboards/dashboard-global-sre-overview.yaml
 kubectl apply -f 7_Observability-Stack/dashboards/dashboard-infrastructure-cluster.yaml
 kubectl apply -f 7_Observability-Stack/dashboards/dashboard-microservice-detail.yaml
+kubectl apply -f 7_Observability-Stack/dashboards/dashboard-kubernetes-components.yaml
 ```
 
 The Grafana sidecar loads ConfigMaps labeled `grafana_dashboard: "1"`

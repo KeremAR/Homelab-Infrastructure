@@ -151,16 +151,18 @@ data:
       }
     }
     
-    // --- 5. CLUSTER-LEVEL METRICS: Service Discovery (DISABLED) ---
-    // Service discovery disabled - Pod discovery is sufficient for application metrics
-    // To enable: uncomment the section below and add prometheus.io/scrape annotation to Service manifests
-    /*
-    discovery.kubernetes "k8s_services" {
-      role = "service"
+    // --- 5. CLUSTER-LEVEL METRICS: Annotated Service Endpoints ---
+    // Pod and EndpointSlice discovery may run together. To avoid duplicate
+    // ingestion, annotate either the Pod template or the Service for a given
+    // workload, not both. Annotated Services must name their metrics port
+    // "metrics"; this also prevents DNS and application ports from being
+    // scraped accidentally.
+    discovery.kubernetes "k8s_service_endpoints" {
+      role = "endpointslice"
     }
 
-    discovery.relabel "k8s_services" {
-      targets = discovery.kubernetes.k8s_services.targets
+    discovery.relabel "k8s_service_endpoints" {
+      targets = discovery.kubernetes.k8s_service_endpoints.targets
       
       // Keep only services with prometheus.io/scrape=true annotation
       rule {
@@ -168,14 +170,19 @@ data:
         action        = "keep"
         regex         = "true"
       }
-      
-      // Use custom port from annotation if specified
+
+      // Scrape only the Service port explicitly named "metrics".
       rule {
-        source_labels = ["__address__", "__meta_kubernetes_service_annotation_prometheus_io_port"]
-        action        = "replace"
-        target_label  = "__address__"
-        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
-        replacement   = "$1:$2"
+        source_labels = ["__meta_kubernetes_endpointslice_port_name"]
+        action        = "keep"
+        regex         = "metrics"
+      }
+
+      // Ignore endpoints that are not ready.
+      rule {
+        source_labels = ["__meta_kubernetes_endpointslice_endpoint_conditions_ready"]
+        action        = "keep"
+        regex         = "true"
       }
       
       // Use custom metrics path from annotation if specified
@@ -195,12 +202,12 @@ data:
         target_label  = "service"
       }
       rule {
-        source_labels = ["__meta_kubernetes_service_type"]
-        target_label  = "type"
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
       }
       rule {
-        source_labels = ["__meta_kubernetes_service_port_number"]
-        target_label  = "port_number"
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
       }
       rule {
         source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_service_name"]
@@ -209,14 +216,169 @@ data:
       }
     }
 
-    prometheus.scrape "k8s_services" {
-      targets    = discovery.relabel.k8s_services.output
+    prometheus.scrape "k8s_service_endpoints" {
+      targets    = discovery.relabel.k8s_service_endpoints.output
       forward_to = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
     }
-    */
 
-    // --- 5. BLACKBOX EXPORTER: External Monitoring Probes ---
-    // Probes services from OUTSIDE to measure end-to-end latency (includes network)
+    // --- 6. KUBERNETES API SERVER ---
+    prometheus.scrape "kube_apiserver" {
+      targets = [{
+        __address__      = "kubernetes.default.svc.cluster.local:443",
+        __scheme__       = "https",
+        __metrics_path__ = "/metrics",
+        job              = "kube-apiserver",
+      }]
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+      }
+      forward_to = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    // --- 7. KUBE-PROXY: one endpoint on every node ---
+    discovery.relabel "kube_proxy" {
+      targets = discovery.kubernetes.k8s_nodes.targets
+      rule {
+        source_labels = ["__meta_kubernetes_node_address_InternalIP"]
+        target_label  = "__address__"
+        replacement   = "$1:10249"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        replacement  = "kube-proxy"
+        target_label = "job"
+      }
+    }
+
+    prometheus.scrape "kube_proxy" {
+      targets    = discovery.relabel.kube_proxy.output
+      forward_to = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    // The following control-plane endpoints are opened in install.md. The
+    // scheduler and controller-manager use self-signed serving certificates,
+    // so their metrics connections cannot be verified with the cluster CA.
+    discovery.relabel "kube_scheduler" {
+      targets = discovery.kubernetes.k8s_nodes.targets
+      rule {
+        source_labels = ["__meta_kubernetes_node_labelpresent_node_role_kubernetes_io_control_plane"]
+        action        = "keep"
+        regex         = "true"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_address_InternalIP"]
+        target_label  = "__address__"
+        replacement   = "$1:10259"
+      }
+      rule {
+        replacement  = "https"
+        target_label = "__scheme__"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        replacement  = "kube-scheduler"
+        target_label = "job"
+      }
+    }
+
+    prometheus.scrape "kube_scheduler" {
+      targets           = discovery.relabel.kube_scheduler.output
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        insecure_skip_verify = true
+      }
+      forward_to = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    discovery.relabel "kube_controller_manager" {
+      targets = discovery.kubernetes.k8s_nodes.targets
+      rule {
+        source_labels = ["__meta_kubernetes_node_labelpresent_node_role_kubernetes_io_control_plane"]
+        action        = "keep"
+        regex         = "true"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_address_InternalIP"]
+        target_label  = "__address__"
+        replacement   = "$1:10257"
+      }
+      rule {
+        replacement  = "https"
+        target_label = "__scheme__"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        replacement  = "kube-controller-manager"
+        target_label = "job"
+      }
+    }
+
+    prometheus.scrape "kube_controller_manager" {
+      targets           = discovery.relabel.kube_controller_manager.output
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        insecure_skip_verify = true
+      }
+      forward_to = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    discovery.relabel "etcd" {
+      targets = discovery.kubernetes.k8s_nodes.targets
+      rule {
+        source_labels = ["__meta_kubernetes_node_labelpresent_node_role_kubernetes_io_control_plane"]
+        action        = "keep"
+        regex         = "true"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_address_InternalIP"]
+        target_label  = "__address__"
+        replacement   = "$1:2381"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        replacement  = "etcd"
+        target_label = "job"
+      }
+    }
+
+    prometheus.scrape "etcd" {
+      targets    = discovery.relabel.etcd.output
+      forward_to = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    // --- 8. BLACKBOX EXPORTER: In-cluster Service Probes ---
+    // Probes ClusterIP Services from the Blackbox Exporter pod.
     // Discovers services with annotation: blackbox.prometheus.io/scrape: "true"
     
     discovery.kubernetes "k8s_services_blackbox" {

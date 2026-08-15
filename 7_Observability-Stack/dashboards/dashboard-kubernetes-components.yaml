@@ -1,0 +1,224 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-components-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  kubernetes-components.json: |
+    {
+      "title": "Kubernetes Control Plane & Networking",
+      "uid": "kubernetes-components",
+      "tags": ["kubernetes", "control-plane", "etcd", "dns", "networking"],
+      "timezone": "browser",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "title": "Component Target Health",
+          "description": "Every expected scrape target should report 1 (UP).",
+          "type": "stat",
+          "gridPos": {"h": 5, "w": 24, "x": 0, "y": 0},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "up{job=~\"kube-apiserver|kube-scheduler|kube-controller-manager|etcd|kube-proxy|kube-system/kube-dns\"}",
+              "legendFormat": "{{job}} {{node}} {{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"value": null, "color": "red"}, {"value": 1, "color": "green"}]}
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "none", "textMode": "value_and_name", "wideLayout": true}
+        },
+        {
+          "id": 2,
+          "title": "API Server Request Rate by Code",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "sum(rate(apiserver_request_total{job=\"kube-apiserver\"}[5m])) by (code)",
+              "legendFormat": "HTTP {{code}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 3,
+          "title": "API Server Request Latency p99",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job=\"kube-apiserver\"}[5m])) by (le, verb))",
+              "legendFormat": "{{verb}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 4,
+          "title": "Scheduler Pending Pods",
+          "type": "stat",
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 13},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "sum(scheduler_pending_pods{job=\"kube-scheduler\"}) by (queue)", "legendFormat": "{{queue}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"value": null, "color": "green"}, {"value": 1, "color": "orange"}, {"value": 10, "color": "red"}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "textMode": "value_and_name"}
+        },
+        {
+          "id": 5,
+          "title": "Scheduling Attempts by Result",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 13},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "sum(rate(scheduler_schedule_attempts_total{job=\"kube-scheduler\"}[5m])) by (result)", "legendFormat": "{{result}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 6,
+          "title": "Scheduling Attempt Latency p99",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 12, "y": 13},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.99, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket{job=\"kube-scheduler\"}[5m])) by (le, result))", "legendFormat": "{{result}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 7,
+          "title": "Controller Workqueue Depth (Top 10)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 18, "y": 13},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "topk(10, workqueue_depth{job=\"kube-controller-manager\"})", "legendFormat": "{{name}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 8,
+          "title": "etcd Leader",
+          "description": "1 means every scraped etcd member currently has a leader.",
+          "type": "stat",
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 21},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "min(etcd_server_has_leader{job=\"etcd\"})", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "NO LEADER", "color": "red"}, "1": {"text": "LEADER OK", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"value": null, "color": "red"}, {"value": 1, "color": "green"}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "textMode": "value"}
+        },
+        {
+          "id": 9,
+          "title": "etcd Database Size",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 21},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "etcd_mvcc_db_total_size_in_bytes{job=\"etcd\"}", "legendFormat": "Allocated {{node}}", "refId": "A"},
+            {"expr": "etcd_mvcc_db_total_size_in_use_in_bytes{job=\"etcd\"}", "legendFormat": "In use {{node}}", "refId": "B"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 10,
+          "title": "etcd WAL Fsync Latency p99",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 12, "y": 21},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.99, sum(rate(etcd_disk_wal_fsync_duration_seconds_bucket{job=\"etcd\"}[5m])) by (le, node))", "legendFormat": "{{node}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 11,
+          "title": "etcd Failed Proposals",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 18, "y": 21},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "sum(rate(etcd_server_proposals_failed_total{job=\"etcd\"}[5m])) by (node)", "legendFormat": "{{node}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "bars", "fillOpacity": 30}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 12,
+          "title": "kube-proxy Rule Sync Latency p99",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 29},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.99, sum(rate(kubeproxy_sync_proxy_rules_duration_seconds_bucket{job=\"kube-proxy\"}[5m])) by (le, node))", "legendFormat": "{{node}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 13,
+          "title": "kube-proxy Pending Changes",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 29},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "kubeproxy_sync_proxy_rules_service_changes_pending{job=\"kube-proxy\"}", "legendFormat": "Services {{node}}", "refId": "A"},
+            {"expr": "kubeproxy_sync_proxy_rules_endpoint_changes_pending{job=\"kube-proxy\"}", "legendFormat": "Endpoints {{node}}", "refId": "B"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 14,
+          "title": "CoreDNS Responses by Code",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 12, "y": 29},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "sum(rate(coredns_dns_responses_total{job=\"kube-system/kube-dns\"}[5m])) by (rcode)", "legendFormat": "{{rcode}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        },
+        {
+          "id": 15,
+          "title": "CoreDNS Request Latency p99",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 6, "x": 18, "y": 29},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.99, sum(rate(coredns_dns_request_duration_seconds_bucket{job=\"kube-system/kube-dns\"}[5m])) by (le, pod))", "legendFormat": "{{pod}}", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}}
+        }
+      ]
+    }

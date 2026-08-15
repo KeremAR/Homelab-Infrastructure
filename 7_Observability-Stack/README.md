@@ -144,7 +144,7 @@ Traces   → Application instrumentation creates spans and pushes them to Alloy 
 Alloy collects and forwards telemetry, but it cannot invent application-level
 metrics or traces that the application has never produced.
 
-#### Metrics Collection (6 Sources)
+#### Metrics Collection (12 Sources)
 
 1. **Unix Exporter** (Node-level)
    - Replaces `node_exporter`
@@ -172,7 +172,28 @@ metrics or traces that the application has never produced.
    - Endpoint: `argo-rollouts-metrics.argo-rollouts.svc.cluster.local:8090`
    - Metrics prefix: `argo_rollouts_*`
 
-6. **Blackbox Exporter** (In-cluster service probing)
+6. **CoreDNS** (EndpointSlice discovery)
+   - Discovered from the annotated `kube-dns` Service
+   - Scrapes every ready backend on the Service port named `metrics`
+   - Endpoint: `<coredns-pod-ip>:9153/metrics`
+
+7. **kube-apiserver**
+   - Endpoint: `https://kubernetes.default.svc:443/metrics`
+   - Uses the Alloy ServiceAccount token and verifies the cluster CA
+
+8. **kube-proxy**
+   - Scrapes every node on `<node-internal-ip>:10249/metrics`
+
+9. **kube-scheduler**
+   - Scrapes each control-plane node on HTTPS port `10259`
+
+10. **kube-controller-manager**
+    - Scrapes each control-plane node on HTTPS port `10257`
+
+11. **etcd**
+    - Scrapes each control-plane node on HTTP port `2381`
+
+12. **Blackbox Exporter** (In-cluster service probing)
    - Discovers services with `blackbox.prometheus.io/scrape: "true"` annotation
    - Probes application Services from the Blackbox Exporter pod inside the cluster
    - Measures in-cluster network and application response latency
