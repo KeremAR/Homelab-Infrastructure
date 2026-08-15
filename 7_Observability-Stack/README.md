@@ -131,6 +131,19 @@ volumes:
 
 **Alloy Configuration Components:**
 
+#### Collection Models at a Glance
+
+The three signals reach Alloy in different ways:
+
+```text
+Metrics  → The application exposes /metrics; Alloy periodically pulls it.
+Logs     → The container runtime writes log files; Alloy tails those files.
+Traces   → Application instrumentation creates spans and pushes them to Alloy over OTLP.
+```
+
+Alloy collects and forwards telemetry, but it cannot invent application-level
+metrics or traces that the application has never produced.
+
 #### Metrics Collection (6 Sources)
 
 1. **Unix Exporter** (Node-level)
@@ -150,8 +163,10 @@ volumes:
 
 4. **kube-state-metrics** (Cluster state)
    - Discovered via pod annotations (`prometheus.io/scrape: "true"`)
-   - Endpoint: `kube-state-metrics.observability.svc.cluster.local:8080`
+   - Target: the dynamically discovered pod IP and its annotated port `8080`
    - Metrics prefix: `kube_*`
+   - No dedicated Alloy `prometheus.scrape "kube_state_metrics"` component is
+     needed because the generic Pod Discovery pipeline already includes it
 
 5. **Argo Rollouts** (Static target)
    - Endpoint: `argo-rollouts-metrics.argo-rollouts.svc.cluster.local:8090`
@@ -203,6 +218,13 @@ template:
 - `job`: namespace/pod
 
 #### Traces Collection (OTLP Receiver)
+
+A trace follows a request through timed operations called spans, such as HTTP
+handlers and database calls. These internal spans cannot be obtained by
+scraping the application like Prometheus metrics. OpenTelemetry instrumentation
+creates them, the application pushes them to Alloy, and Alloy forwards them to
+Jaeger. Zero-code agents and eBPF tools can also produce traces, but generally
+provide less application-level detail than explicit instrumentation.
 
 - **gRPC Endpoint**: `:4317`
 - **HTTP Endpoint**: `:4318`
@@ -298,6 +320,29 @@ Instrumentator().instrument(app).expose(app)
 # Result: All default metrics with default buckets
 ```
 
+`instrument(app)` installs middleware that observes when each FastAPI request
+starts and finishes. `expose(app)` adds the normal HTTP `/metrics` endpoint.
+The Python process keeps the metric counters and histogram buckets in memory
+and publishes their current values as Prometheus text format through that
+endpoint; `/metrics` is not a hidden page and should normally remain reachable
+only from the intended monitoring network.
+
+The complete application-metrics flow is:
+
+```text
+FastAPI Instrumentator
+    ↓ records counters and request durations in process memory
+Pod IP:<annotated-port>/metrics
+    ↓ Alloy discovers the annotated pod and periodically performs HTTP GET
+Grafana Alloy
+    ↓ Prometheus remote_write
+Prometheus
+```
+
+The port in `prometheus.io/port` must match the port on which the application
+exposes `/metrics`; `8080` in this document is an example rather than a fixed
+requirement.
+
 **Why Custom Buckets?**
 Prometheus Histograms count requests in specific "buckets" (e.g., "requests faster than 0.1s").
 - **Default Buckets**: Often too wide, making it impossible to distinguish between fast (0.2s) and slow (4.9s) requests.
@@ -320,6 +365,13 @@ podAnnotations:
   prometheus.io/scrape: "true"
   prometheus.io/port: "8080"
 ```
+
+The generic Kubernetes Pod Discovery pipeline watches pod metadata through the
+Kubernetes API and keeps targets whose `prometheus.io/scrape` annotation is
+`true`. The kube-state-metrics pod has this annotation, so it enters the same
+pipeline as annotated application pods. Alloy therefore scrapes its discovered
+pod IP on port `8080`; a separate kube-state-metrics-specific scrape component
+is unnecessary.
 
 **Difference from Kubelet Metrics:**
 - **Kubelet**: Container resource usage (CPU, memory)
