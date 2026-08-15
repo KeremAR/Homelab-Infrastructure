@@ -1,0 +1,555 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: global-sre-overview-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  global-sre-overview.json: |
+    {
+      "title": "Global SRE Overview - Cluster Health & Service Status",
+      "uid": "global-sre-overview",
+      "tags": ["sre", "global", "overview", "health", "cluster"],
+      "timezone": "browser",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "namespace",
+            "type": "query",
+            "label": "Namespace",
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "query": "label_values(rollout_info_replicas_available, namespace)",
+            "refresh": 1,
+            "includeAll": true,
+            "multi": false,
+            "allValue": ".*",
+            "sort": 1
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "✅ Global Success Rate (%)",
+          "type": "stat",
+          "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "100 * (sum(rate(http_requests_total{namespace=~\"$namespace\", status=~\"2..\"}[5m])) / sum(rate(http_requests_total{namespace=~\"$namespace\"}[5m])))",
+              "refId": "A"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "red"},
+                  {"value": 95, "color": "yellow"},
+                  {"value": 99, "color": "green"}
+                ]
+              },
+              "unit": "percent",
+              "decimals": 2
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"]
+            },
+            "orientation": "auto",
+            "textMode": "value_and_name",
+            "colorMode": "background"
+          }
+        },
+        {
+          "id": 2,
+          "title": "📊 Global Traffic (RPS)",
+          "type": "stat",
+          "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{namespace=~\"$namespace\"}[5m]))",
+              "refId": "A"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "blue"}
+                ]
+              },
+              "unit": "reqps",
+              "decimals": 1
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"]
+            },
+            "orientation": "auto",
+            "textMode": "value_and_name",
+            "colorMode": "value"
+          }
+        },
+        {
+          "id": 3,
+          "title": "🔥 Global Error Rate (5xx)",
+          "type": "stat",
+          "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{namespace=~\"$namespace\", status=~\"5..\"}[5m]))",
+              "refId": "A"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "green"},
+                  {"value": 0.1, "color": "yellow"},
+                  {"value": 1, "color": "red"}
+                ]
+              },
+              "unit": "reqps",
+              "decimals": 2
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"]
+            },
+            "orientation": "auto",
+            "textMode": "value_and_name",
+            "colorMode": "background"
+          }
+        },
+        {
+          "id": 4,
+          "title": "⏱️ Global P95 Latency",
+          "type": "stat",
+          "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+              "refId": "A"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "green"},
+                  {"value": 0.5, "color": "yellow"},
+                  {"value": 1, "color": "red"}
+                ]
+              },
+              "unit": "s",
+              "decimals": 3
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"]
+            },
+            "orientation": "auto",
+            "textMode": "value_and_name",
+            "colorMode": "background"
+          }
+        },
+        {
+          "id": 5,
+          "title": "🔥 Top 5 Error Generators (5xx Rate)",
+          "type": "table",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+          "targets": [
+            {
+              "expr": "topk(5, sum(rate(http_requests_total{namespace=~\"$namespace\", status=~\"5..\"}[5m])) by (namespace, job, pod))",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "namespace": 0,
+                  "job": 1,
+                  "pod": 2,
+                  "Value": 3
+                },
+                "renameByName": {
+                  "namespace": "Namespace",
+                  "job": "Service",
+                  "pod": "Pod",
+                  "Value": "Error Rate (req/s)"
+                }
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "fields": {},
+                "sort": [
+                  {"field": "Error Rate (req/s)", "desc": true}
+                ]
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "left",
+                "displayMode": "auto"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "transparent"},
+                  {"value": 0.1, "color": "rgba(237, 129, 40, 0.2)"},
+                  {"value": 1, "color": "rgba(245, 54, 54, 0.3)"}
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Error Rate (req/s)"},
+                "properties": [
+                  {
+                    "id": "custom.displayMode",
+                    "value": "color-background"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "reqps"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": []
+          }
+        },
+        {
+          "id": 6,
+          "title": "🚀 Service Traffic Distribution (RPS)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+          "targets": [
+            {
+              "expr": "topk(10, sum(rate(http_requests_total{namespace=~\"$namespace\"}[5m])) by (job))",
+              "refId": "A",
+              "legendFormat": "{{job}}"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": ["lastNotNull", "max"]
+            }
+          }
+        },
+        {
+          "id": 7,
+          "title": "🏥 Service Health Grid (Click to Drill Down)",
+          "type": "table",
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 14},
+          "targets": [
+            {
+              "expr": "sum(label_replace(rate(http_requests_total{namespace=~\"$namespace\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            },
+            {
+              "expr": "sum(label_replace(rate(http_requests_total{namespace=~\"$namespace\", status=~\"2..\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "refId": "B",
+              "format": "table",
+              "instant": true
+            },
+            {
+              "expr": "sum(label_replace(rate(http_requests_total{namespace=~\"$namespace\", status=~\"5..\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "refId": "C",
+              "format": "table",
+              "instant": true
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(label_replace(rate(http_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (le, namespace, service))",
+              "refId": "D",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "transformations": [
+            {
+              "id": "merge"
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "le": true
+                },
+                "indexByName": {
+                  "namespace": 0,
+                  "service": 1,
+                  "Value #A": 2,
+                  "Value #B": 3,
+                  "Value #C": 4,
+                  "Value #D": 5
+                },
+                "renameByName": {
+                  "namespace": "Namespace",
+                  "service": "Service",
+                  "Value #A": "Total RPS",
+                  "Value #B": "Success RPS",
+                  "Value #C": "Error RPS",
+                  "Value #D": "P95 Latency (s)"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "reduce": {
+                  "reducer": "sum"
+                },
+                "binary": {
+                  "left": "Success RPS",
+                  "operator": "/",
+                  "right": "Total RPS"
+                },
+                "replaceFields": false,
+                "alias": "Success Rate"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "left",
+                "displayMode": "auto"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Total RPS"},
+                "properties": [
+                  {"id": "unit", "value": "reqps"},
+                  {"id": "decimals", "value": 2},
+                  {"id": "custom.displayMode", "value": "color-background"},
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {"value": null, "color": "transparent"},
+                        {"value": 1, "color": "rgba(50, 172, 45, 0.2)"},
+                        {"value": 10, "color": "rgba(50, 172, 45, 0.4)"}
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Error RPS"},
+                "properties": [
+                  {"id": "unit", "value": "reqps"},
+                  {"id": "decimals", "value": 3},
+                  {"id": "custom.displayMode", "value": "color-background"},
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {"value": null, "color": "rgba(50, 172, 45, 0.2)"},
+                        {"value": 0.01, "color": "rgba(237, 129, 40, 0.3)"},
+                        {"value": 0.1, "color": "rgba(245, 54, 54, 0.4)"}
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Success Rate"},
+                "properties": [
+                  {"id": "unit", "value": "percentunit"},
+                  {"id": "decimals", "value": 2},
+                  {"id": "custom.displayMode", "value": "color-background"},
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {"value": null, "color": "rgba(245, 54, 54, 0.4)"},
+                        {"value": 0.95, "color": "rgba(237, 129, 40, 0.3)"},
+                        {"value": 0.99, "color": "rgba(50, 172, 45, 0.3)"}
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "P95 Latency (s)"},
+                "properties": [
+                  {"id": "unit", "value": "s"},
+                  {"id": "decimals", "value": 3},
+                  {"id": "custom.displayMode", "value": "color-background"},
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {"value": null, "color": "rgba(50, 172, 45, 0.2)"},
+                        {"value": 0.5, "color": "rgba(237, 129, 40, 0.3)"},
+                        {"value": 1, "color": "rgba(245, 54, 54, 0.4)"}
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Service"},
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "View Service Details",
+                        "url": "/d/microservice-detail?var-namespace=${__data.fields.Namespace}&var-service=${__data.fields.Service}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [
+              {"displayName": "Error RPS", "desc": true}
+            ]
+          }
+        },
+        {
+          "id": 8,
+          "title": "📈 Global Success Rate Trend",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 26},
+          "targets": [
+            {
+              "expr": "100 * (sum(rate(http_requests_total{namespace=~\"$namespace\", status=~\"2..\"}[5m])) / sum(rate(http_requests_total{namespace=~\"$namespace\"}[5m])))",
+              "refId": "A",
+              "legendFormat": "Success Rate %"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 20,
+                "showPoints": "never"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": null, "color": "red"},
+                  {"value": 95, "color": "yellow"},
+                  {"value": 99, "color": "green"}
+                ]
+              }
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "id": 9,
+          "title": "🔥 Global Error Rate Trend (5xx)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 26},
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{namespace=~\"$namespace\", status=~\"5..\"}[5m]))",
+              "refId": "A",
+              "legendFormat": "5xx Error Rate"
+            }
+          ],
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "fillOpacity": 30,
+                "showPoints": "never"
+              },
+              "color": {"mode": "fixed", "fixedColor": "red"}
+            }
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        }
+      ]
+    }

@@ -1,0 +1,21 @@
+prometheus:
+  monitor:
+    enabled: false
+
+selfMonitor:
+  enabled: false
+
+prometheusScrape: true
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: /metrics
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
