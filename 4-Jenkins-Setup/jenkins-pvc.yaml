@@ -8,7 +8,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 8Gi
+      storage: 3Gi
   storageClassName: longhorn-storageclass
 ---
 apiVersion: v1
@@ -34,7 +34,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 2Gi
+      storage: 1Gi
   storageClassName: longhorn-storageclass
 ---
 apiVersion: v1
@@ -47,7 +47,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 4Gi
   storageClassName: longhorn-storageclass
 ---
 apiVersion: v1
@@ -112,5 +112,5 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 2Gi
+      storage: 1Gi
   storageClassName: longhorn-storageclass

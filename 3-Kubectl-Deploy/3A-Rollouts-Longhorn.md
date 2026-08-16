@@ -68,6 +68,21 @@ parallel-ssh \
    systemctl enable --now iscsid"
 ```
 
+If these VMs do not use real SAN multipath storage, disable `multipathd` on the
+Longhorn nodes:
+
+```bash
+parallel-ssh \
+  -h longhorn-workers.txt \
+  -i \
+  -x "-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" \
+  "systemctl disable --now multipathd.service multipathd.socket"
+```
+
+Otherwise, `multipathd` can claim a Longhorn iSCSI device and cause new volumes
+to fail during formatting or mounting with `is apparently in use by the
+system`. Do not disable it on nodes that actually depend on multipath storage.
+
 Label all worker nodes before installing Longhorn. The selector uses the worker-role label, so this command continues to work when CAPI recreates a Machine with a different node name:
 
 ```bash
