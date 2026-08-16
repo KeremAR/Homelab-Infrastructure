@@ -1,8 +1,8 @@
 # Observability Stack Installation
 
-This stack uses Prometheus for metrics, Loki for logs, Jaeger for traces,
-Grafana for visualization, and Grafana Alloy as the collection agent. Run all
-commands from the repository root.
+This stack uses Prometheus for metrics, Elasticsearch and Kibana for logs,
+Jaeger for traces, Grafana for metric dashboards, and Grafana Alloy as the
+collection agent. Run all commands from the repository root.
 
 ## Prerequisites
 
@@ -109,18 +109,20 @@ token. API server verification continues to use the cluster CA.
 
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-# Grafana and Loki community charts
+# Grafana community chart
 helm repo add grafana-community https://grafana-community.github.io/helm-charts
 # Alloy is still published from Grafana's product repository
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
+helm repo add elastic https://helm.elastic.co
 helm repo update
 ```
 
-## 2. Create the namespace, storage, and Grafana Secret
+## 2. Create the namespace, storage, and Secrets
 
-Prometheus and Grafana use explicitly created PVCs. Loki's chart creates its
-own 2 Gi PVC from `longhorn-storageclass` through `singleBinary.persistence`.
+Prometheus and Grafana use explicitly created PVCs. ECK creates
+Elasticsearch's StatefulSet PVC from the `volumeClaimTemplates` in
+`logs/elasticsearch.yaml`.
 
 ```bash
 kubectl apply -f 7_Observability-Stack/namespace.yaml
@@ -128,10 +130,11 @@ kubectl apply -f 7_Observability-Stack/metrics/prometheus-pvc.yaml
 kubectl apply -f 7_Observability-Stack/grafana-pvc.yaml
 ```
 
-Add this variable to the repository root `.env` file:
+Add these variables to the repository root `.env` file:
 
 ```dotenv
 GRAFANA_ADMIN_PASSWORD=replace-with-a-strong-password
+ELASTIC_PASSWORD=replace-with-a-strong-password
 ```
 
 ```bash
@@ -139,6 +142,7 @@ set -a
 source .env
 set +a
 envsubst < 7_Observability-Stack/grafana-secrets.yaml | kubectl apply -f -
+envsubst < 7_Observability-Stack/logs/elastic-credentials-secret.yaml | kubectl apply -f -
 ```
 
 ## 3. Install Prometheus and its exporters
@@ -172,17 +176,68 @@ kubectl apply -f 7_Observability-Stack/metrics/prometheus-httproute.yaml
 
 Prometheus: <http://prometheus.192.168.0.110.nip.io>
 
-## 4. Install Loki
+## 4. Install Elasticsearch and Kibana with ECK
 
-This homelab uses a persistent, single-binary Loki deployment. It is simple but
-is not an HA Loki architecture.
+ECK manages the Elasticsearch StatefulSet, Kibana Deployment, TLS certificates,
+credentials, and rolling updates. This homelab deployment uses one
+Elasticsearch node and a 2 Gi Longhorn volume, so it is persistent but not HA.
+
+ECK does not use a Helm-style `existingClaim` setting for its managed
+Elasticsearch data volume. The `volumeClaimTemplates` entry creates the
+StatefulSet PVC with a deterministic name. `DeleteOnScaledownOnly` preserves
+that claim if the Elasticsearch resource is deleted, allowing ECK to adopt it
+when the resource is recreated with the same cluster and node-set names. The
+2 Gi size is suitable only for this small lab; it can be increased later when
+the StorageClass supports expansion, but Kubernetes does not allow shrinking
+an existing claim.
 
 ```bash
-helm upgrade --install loki grafana-community/loki \
-  --namespace observability \
-  --values 7_Observability-Stack/logs/loki-values.yaml \
+helm upgrade --install elastic-operator elastic/eck-operator \
+  --namespace elastic-system \
+  --create-namespace \
+  --version 3.5.0 \
   --wait
+
+kubectl apply -f 7_Observability-Stack/logs/elasticsearch.yaml
+kubectl apply -f 7_Observability-Stack/logs/kibana.yaml
+kubectl get elasticsearch -n observability
+kubectl get kibana -n observability
+kubectl get pods -n observability -w
 ```
+
+Wait until Elasticsearch reports `green` (or `yellow` only because this is a
+single-node cluster) and Kibana becomes healthy, then stop the watch with
+`Ctrl+C`. Kibana's public HTTP listener is intentionally plain HTTP because
+this trusted homelab exposes it through the existing shared Gateway.
+Elasticsearch remains HTTPS-only.
+
+```bash
+kubectl get pods,pvc -n observability
+kubectl apply -f 7_Observability-Stack/logs/kibana-httproute.yaml
+```
+
+Kibana: <http://kibana.192.168.0.110.nip.io>
+
+Log in as `elastic` with `ELASTIC_PASSWORD`. In Kibana, open **Stack
+Management → API Keys → Create API key** and use the role descriptor stored in
+`7_Observability-Stack/logs/alloy-api-key-role.json`. Copy the encoded API key
+and add the complete authorization value to `.env`:
+
+```dotenv
+ELASTIC_AUTHORIZATION=ApiKey replace-with-the-encoded-api-key
+```
+
+Create the Secret consumed by Alloy:
+
+```bash
+set -a
+source .env
+set +a
+envsubst < 7_Observability-Stack/logs/elastic-key-secret.yaml | kubectl apply -f -
+```
+
+ECK creates `logs-es-http-certs-public`. Alloy mounts this Secret directly and
+uses its `ca.crt` to verify Elasticsearch; no copied CA file is required.
 
 ## 5. Install Jaeger
 
@@ -206,10 +261,15 @@ Jaeger: <http://jaeger.192.168.0.110.nip.io>
 
 ## 6. Install Grafana Alloy
 
-Alloy runs once per node and sends metrics to Prometheus, logs to Loki, and
-traces to Jaeger. Its configuration is kept in three signal-specific
+Alloy runs once per node and sends metrics to Prometheus, logs to Elasticsearch,
+and traces to Jaeger. Its configuration is kept in three signal-specific
 ConfigMaps. Kubernetes projects them into one directory, which Alloy loads as
 a single configuration.
+
+The log collector still uses `loki.source.file` and `loki.process`. These are
+local Alloy pipeline components, not a Loki server. `otelcol.receiver.loki`
+converts their output to OpenTelemetry logs, and `otelcol.exporter.otlphttp`
+sends them to Elasticsearch's `/_otlp/v1/logs` endpoint.
 
 Pod Discovery and EndpointSlice Discovery are both enabled. They do not
 inherently duplicate data, but the same workload would be scraped twice if
@@ -259,8 +319,8 @@ alloy.observability.svc.cluster.local:4317
 
 ## 7. Install Grafana
 
-Datasource UIDs are fixed as `prometheus` and `loki`, so dashboard manifests do
-not need a script to discover generated UIDs.
+The Prometheus datasource UID is fixed, so dashboard manifests do not need a
+script to discover a generated UID. Logs are explored in Kibana Discover.
 
 ```bash
 helm upgrade --install grafana grafana-community/grafana \
@@ -298,5 +358,18 @@ kubectl get httproute -n observability
 kubectl logs -n observability daemonset/alloy --tail=100
 ```
 
-Every node should have one Alloy pod. All PVCs should be `Bound`, and all four
-HTTPRoutes should be accepted by the shared Gateway.
+Every node should have one Alloy pod. All PVCs should be `Bound`, and all five
+HTTPRoutes should be accepted by the shared Gateway. Generate a new application
+log, then confirm that a `logs-*` data stream and its fields appear in Kibana
+Discover.
+
+## 10. Remove an existing Loki deployment
+
+For a migration, keep Loki running until new logs are visible in Kibana. The
+following commands permanently remove the old Loki release and its stored log
+data because the PVC uses the `Delete` reclaim policy:
+
+```bash
+helm uninstall loki -n observability
+kubectl delete pvc storage-loki-0 -n observability
+```

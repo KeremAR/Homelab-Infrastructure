@@ -1,0 +1,10 @@
+{
+  "alloy_writer": {
+    "indices": [
+      {
+        "names": ["logs-*"],
+        "privileges": ["create_doc", "auto_configure"]
+      }
+    ]
+  }
+}

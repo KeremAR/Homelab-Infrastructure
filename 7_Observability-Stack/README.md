@@ -30,7 +30,7 @@ The observability stack is built around **Grafana Alloy** as a unified collectio
 │  │  │  Logs Collection:                                      │  │  │
 │  │  │  • Tail /var/log/pods (all pod logs)                   │  │  │
 │  │  │  • Parse CRI/Docker formats                            │  │  │
-│  │  │  └─> Push → Loki                                       │  │  │
+│  │  │  └─> OTLP/HTTP → Elasticsearch                         │  │  │
 │  │  │                                                        │  │  │
 │  │  │  Traces Collection:                                    │  │  │
 │  │  │  • OTLP Receiver (gRPC :4317, HTTP :4318)              │  │  │
@@ -39,13 +39,12 @@ The observability stack is built around **Grafana Alloy** as a unified collectio
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                    │
 │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐               │
-│  │ Prometheus  │   │    Loki     │   │   Jaeger    │               │
+│  │ Prometheus  │   │Elasticsearch│   │   Jaeger    │               │
 │  │  (Metrics)  │   │   (Logs)    │   │  (Traces)   │               │
 │  └─────────────┘   └─────────────┘   └─────────────┘               │
 │         ↓                  ↓                  ↓                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                    Grafana (Visualization)                   │  │
-│  │  • Dashboards  • Explore  • Alerting  • Correlation          │  │
+│  │        Grafana (metrics) + Kibana Discover (logs)            │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -88,28 +87,14 @@ server:
     web.enable-remote-write-receiver: ""  # CRITICAL for Alloy
 ```
 
-### 2. Loki (Logs Database)
+### 2. Elasticsearch and Kibana (Logs)
 
 **Configuration Highlights:**
-- **SingleBinary Mode**: All components in one pod (simple deployment)
-- **Filesystem Storage**: Filesystem backend on a persistent Longhorn volume
-  (no S3/object store needed)
-- **Schema v13**: Latest stable with TSDB index
-
-**Critical Configuration Fix:**
-```yaml
-loki:
-  storage:
-    filesystem:
-      chunks_directory: /var/loki/chunks  # Note the 's' - common mistake!
-  schemaConfig:
-    configs:
-      - object_store: filesystem  # MUST match storage.type
-```
-
-**Common Error Prevented:**
-- ❌ `bucketNames required` error → Fixed by matching object_store type
-- ❌ `unknown field chunk_directory` → Fixed by using `chunks_directory`
+- **ECK-managed**: The operator manages Elasticsearch, Kibana, TLS, and updates
+- **Persistent Storage**: An ECK-managed 2 Gi Longhorn PVC stores Elasticsearch data
+- **OTLP Ingestion**: Alloy sends logs to Elasticsearch over OTLP/HTTP
+- **Field Exploration**: Kibana Discover provides field-based filtering
+- **Homelab Topology**: One Elasticsearch node; persistent but not HA
 
 ### 3. Grafana Alloy (Unified Agent)
 
@@ -137,7 +122,7 @@ The three signals reach Alloy in different ways:
 
 ```text
 Metrics  → The application exposes /metrics; Alloy periodically pulls it.
-Logs     → The container runtime writes log files; Alloy tails those files.
+Logs     → The container runtime writes log files; Alloy tails and sends them to Elasticsearch.
 Traces   → Application instrumentation creates spans and pushes them to Alloy over OTLP.
 ```
 
@@ -224,19 +209,24 @@ template:
 5. **Parse**: Extract timestamp, stream (stdout/stderr), message
    - Containerd: CRI format parser
    - Docker: JSON format parser
-6. **Write**: Push to Loki with labels
+6. **Convert and write**: Convert the processed entries to OTLP and send them
+   to Elasticsearch over HTTPS
 
 **Log File Path Pattern:**
 ```
 /var/log/pods/<namespace>_<pod>_<uid>/<container>/0.log
 ```
 
-**Resulting Loki Labels:**
+**Resulting Elasticsearch log attributes:**
 - `namespace`: Kubernetes namespace
 - `pod`: Pod name
 - `container`: Container name
 - `stream`: stdout or stderr
 - `job`: namespace/pod
+
+These Kubernetes fields are filterable in Kibana Discover. Fields that exist
+only inside an application's plain-text message, such as HTTP status or request
+path, require structured JSON application logs or an additional parsing stage.
 
 #### Traces Collection (OTLP Receiver)
 

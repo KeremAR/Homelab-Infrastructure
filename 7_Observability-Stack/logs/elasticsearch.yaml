@@ -1,0 +1,41 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: logs
+  namespace: observability
+spec:
+  version: 9.5.1
+  # Preserve the PVC if the Elasticsearch resource is deleted accidentally.
+  # Scaling the node set down still deletes the corresponding PVC.
+  volumeClaimDeletePolicy: DeleteOnScaledownOnly
+  auth:
+    fileRealm:
+      - secretName: elastic-credentials-secret
+  nodeSets:
+    - name: default
+      count: 1
+      config:
+        # Avoid requiring vm.max_map_count changes on every Kubernetes node.
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 1Gi
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+      volumeClaimTemplates:
+        - metadata:
+            # ECK requires this name for the default Elasticsearch data path.
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            storageClassName: longhorn-storageclass
+            resources:
+              requests:
+                storage: 2Gi

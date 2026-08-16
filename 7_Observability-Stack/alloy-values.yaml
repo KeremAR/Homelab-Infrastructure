@@ -36,6 +36,10 @@ controller:
                 items:
                   - key: traces.alloy
                     path: traces.alloy
+      - name: elasticsearch-ca
+        secret:
+          # ECK creates this public CA Secret for the logs-es-http Service.
+          secretName: logs-es-http-certs-public
 
 alloy:
   configMap:
@@ -47,6 +51,9 @@ alloy:
   clustering:
     enabled: true
     portName: http
+  envFrom:
+    - secretRef:
+        name: elastic-key-secret
   mounts:
     varlog: true
     dockercontainers: true
@@ -63,6 +70,9 @@ alloy:
         mountPropagation: HostToContainer
       - name: alloy-signal-configs
         mountPath: /etc/alloy-configs
+        readOnly: true
+      - name: elasticsearch-ca
+        mountPath: /etc/alloy/elasticsearch
         readOnly: true
   extraPorts:
     - name: otlp-grpc

@@ -290,10 +290,10 @@ Instant service health status:
 
 #### 📝 Logs & Tracing (Row 5 - 2 Panels)
 
-11. **Service Logs (Loki)** - Real-time log stream
-    - Filtered by namespace and service
-    - Shows timestamps, log levels, and messages
-    - Searchable and filterable
+11. **Service Logs (Kibana Discover)** - Link to the log exploration UI
+    - Elasticsearch stores the logs and their Kubernetes attributes
+    - Kibana provides field selection, search, and one-click filtering
+    - The selected Grafana namespace and service are shown as investigation context
 
 12. **Tracing - Jaeger Link** - Distributed tracing integration
     - Direct link to Jaeger UI for this service
@@ -315,7 +315,7 @@ Instant service health status:
 **Key Features:**
 - ✅ **RED Method Compliance**: Industry-standard service monitoring (Rate, Errors, Duration)
 - ✅ **Variable Driven**: `$namespace` and `$service` variables for dynamic filtering
-- ✅ **Log Integration**: Direct access to service logs via Loki
+- ✅ **Log Integration**: Direct access to Elasticsearch logs through Kibana
 - ✅ **Trace Integration**: One-click to Jaeger for distributed tracing
 - ✅ **Resource Correlation**: Link service performance to resource usage
 - ✅ **Drill-Down Target**: Designed to receive drill-down from Global SRE Dashboard
@@ -395,17 +395,19 @@ Instant service health status:
 - ✅ Distributed trace collection (resilience)
 - ✅ Automatic scaling (new nodes get agent automatically)
 
-### Why Filesystem Storage for Loki?
+### Why Elasticsearch with ECK?
 
-**Alternatives:** S3, GCS, Azure Blob
+**Alternatives:** Loki, an externally managed Elastic deployment
 
-**Why Filesystem:**
-- ✅ Simple setup (no external dependencies)
-- ✅ Good for dev/small clusters
-- ✅ No cloud costs
-- ✅ Persistent filesystem storage on the Longhorn-backed volume
+**Why ECK:**
+- ✅ Kibana Discover provides field-oriented log exploration
+- ✅ ECK manages Elasticsearch, Kibana, credentials, TLS, and rolling updates
+- ✅ Elasticsearch data persists on the Longhorn-backed volume
+- ✅ Alloy remains the single node-level collection agent
 
-**Production Consideration:** Switch to object storage for multi-node Loki deployments
+**Production Consideration:** The homelab uses one Elasticsearch node and is
+not HA. Production deployments require capacity planning, retention, backups,
+and multiple Elasticsearch roles/nodes.
 
 ### Why Annotation-Based Pod Discovery?
 

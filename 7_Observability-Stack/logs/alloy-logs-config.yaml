@@ -5,7 +5,7 @@ metadata:
   namespace: observability
 data:
   logs.alloy: |
-    // === LOG COLLECTION (LOKI) ===
+    // === LOG COLLECTION (ELASTICSEARCH) ===
     // ========================================
 
     discovery.kubernetes "pods" {
@@ -69,12 +69,33 @@ data:
         values = ["tmp_container_runtime"]
       }
 
-      forward_to = [loki.write.loki_db.receiver]
+      forward_to = [otelcol.receiver.loki.elasticsearch.receiver]
     }
 
-    loki.write "loki_db" {
-      endpoint {
-        url = "http://loki-gateway.observability.svc.cluster.local:80/loki/api/v1/push"
+    // Bridge the existing Loki-format collection pipeline into OpenTelemetry.
+    // No Loki server is involved in this path.
+    otelcol.receiver.loki "elasticsearch" {
+      output {
+        logs = [otelcol.processor.batch.elasticsearch_logs.input]
+      }
+    }
+
+    otelcol.processor.batch "elasticsearch_logs" {
+      output {
+        logs = [otelcol.exporter.otlphttp.elasticsearch.input]
+      }
+    }
+
+    otelcol.exporter.otlphttp "elasticsearch" {
+      client {
+        // The exporter appends /v1/logs for the logs signal.
+        endpoint = "https://logs-es-http.observability.svc:9200/_otlp"
+        headers = {
+          Authorization = sys.env("ELASTIC_AUTHORIZATION"),
+        }
+        tls {
+          ca_file = "/etc/alloy/elasticsearch/ca.crt"
+        }
       }
     }
 

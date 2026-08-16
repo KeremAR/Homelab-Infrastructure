@@ -1,0 +1,29 @@
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: logs
+  namespace: observability
+spec:
+  version: 9.5.1
+  count: 1
+  elasticsearchRef:
+    name: logs
+  config:
+    server.publicBaseUrl: http://kibana.192.168.0.110.nip.io
+  # The shared Gateway exposes this homelab UI over HTTP. Elasticsearch remains
+  # HTTPS-only, and ECK configures Kibana's trusted connection to it.
+  http:
+    tls:
+      selfSignedCertificate:
+        disabled: true
+  podTemplate:
+    spec:
+      containers:
+        - name: kibana
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi

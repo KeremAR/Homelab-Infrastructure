@@ -416,22 +416,12 @@ data:
         },
         {
           "id": 10,
-          "title": "📝 Logs - Service Logs (Loki)",
-          "type": "logs",
+          "title": "📝 Logs - Kibana Discover",
+          "type": "text",
           "gridPos": {"h": 10, "w": 24, "x": 0, "y": 28},
-          "targets": [
-            {
-              "expr": "{namespace=\"$namespace\", pod=~\"$service.*\"}",
-              "refId": "A"
-            }
-          ],
-          "datasource": {"type": "loki", "uid": "loki"},
           "options": {
-            "showTime": true,
-            "showLabels": false,
-            "wrapLogMessage": true,
-            "enableLogDetails": true,
-            "sortOrder": "Descending"
+            "mode": "html",
+            "content": "<h3>📝 Application Logs</h3><p>Logs are stored in Elasticsearch and explored with Kibana Discover.</p><p><strong>Selected service:</strong> <code>$namespace / $service</code></p><p><a href=\"http://kibana.192.168.0.110.nip.io/app/discover\" target=\"_blank\" rel=\"noopener noreferrer\">🔗 Open Kibana Discover</a></p>"
           }
         },
         {
