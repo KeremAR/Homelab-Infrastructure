@@ -1,0 +1,15 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kiali
+  namespace: istio-system
+spec:
+  parentRefs:
+    - name: shared-gateway
+      namespace: envoy-gateway
+  hostnames:
+    - kiali.192.168.0.110.nip.io
+  rules:
+    - backendRefs:
+        - name: kiali
+          port: 20001

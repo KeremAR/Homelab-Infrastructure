@@ -167,7 +167,10 @@ metrics or traces that the application has never produced.
    - Uses the Alloy ServiceAccount token and verifies the cluster CA
 
 8. **kube-proxy**
+   - Optional and disabled in the Alloy config by default
+   - Used only by the classic networking option
    - Scrapes every node on `<node-internal-ip>:10249/metrics`
+   - Not present when Cilium uses `kubeProxyReplacement: true`
 
 9. **kube-scheduler**
    - Scrapes each control-plane node on HTTPS port `10259`

@@ -1,0 +1,23 @@
+auth:
+  strategy: anonymous
+
+deployment:
+  namespace: istio-system
+  accessible_namespaces:
+    - "**"
+
+istio_namespace: istio-system
+
+external_services:
+  prometheus:
+    url: http://prometheus-server.observability.svc.cluster.local:80
+  grafana:
+    enabled: true
+    internal_url: http://grafana.observability.svc.cluster.local:80
+    external_url: http://grafana.192.168.0.110.nip.io
+  tracing:
+    enabled: true
+    provider: jaeger
+    internal_url: http://jaeger.observability.svc.cluster.local:16686
+    external_url: http://jaeger.192.168.0.110.nip.io
+    use_grpc: false

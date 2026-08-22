@@ -242,31 +242,36 @@ data:
       }
     }
 
-    // --- 7. KUBE-PROXY: one endpoint on every node ---
-    discovery.relabel "kube_proxy" {
-      targets = discovery.kubernetes.k8s_nodes.targets
-      rule {
-        source_labels = ["__meta_kubernetes_node_address_InternalIP"]
-        target_label  = "__address__"
-        replacement   = "$1:10249"
-      }
-      rule {
-        source_labels = ["__meta_kubernetes_node_name"]
-        target_label  = "node"
-      }
-      rule {
-        replacement  = "kube-proxy"
-        target_label = "job"
-      }
-    }
-
-    prometheus.scrape "kube_proxy" {
-      targets    = discovery.relabel.kube_proxy.output
-      forward_to = [prometheus.remote_write.prometheus.receiver]
-      clustering {
-        enabled = true
-      }
-    }
+    // --- OPTIONAL: KUBE-PROXY (classic networking only) ---
+    // Keep this disabled when Cilium runs with kubeProxyReplacement=true.
+    // To use it on a classic kube-proxy cluster, expose metrics on
+    // 0.0.0.0:10249 as described in install.md and remove the leading // from
+    // the complete block below.
+    //
+    // discovery.relabel "kube_proxy" {
+    //   targets = discovery.kubernetes.k8s_nodes.targets
+    //   rule {
+    //     source_labels = ["__meta_kubernetes_node_address_InternalIP"]
+    //     target_label  = "__address__"
+    //     replacement   = "$1:10249"
+    //   }
+    //   rule {
+    //     source_labels = ["__meta_kubernetes_node_name"]
+    //     target_label  = "node"
+    //   }
+    //   rule {
+    //     replacement  = "kube-proxy"
+    //     target_label = "job"
+    //   }
+    // }
+    //
+    // prometheus.scrape "kube_proxy" {
+    //   targets    = discovery.relabel.kube_proxy.output
+    //   forward_to = [prometheus.remote_write.prometheus.receiver]
+    //   clustering {
+    //     enabled = true
+    //   }
+    // }
 
     // The following control-plane endpoints are opened in install.md. The
     // scheduler and controller-manager use self-signed serving certificates,

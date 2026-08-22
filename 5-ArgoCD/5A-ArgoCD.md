@@ -38,8 +38,8 @@ Earlier infrastructure steps should already be done:
 
 - Kubernetes cluster is running.
 - MetalLB is installed.
-- NGINX Gateway Fabric is installed.
-- `shared-gateway` exists in namespace `nginx-gateway`.
+- Envoy Gateway is installed.
+- `shared-gateway` exists in namespace `envoy-gateway`.
 - Argo Rollouts CRDs and controller are already installed from the kubectl
   deploy phase.
 - `kubectl` points to the target cluster.
@@ -48,7 +48,7 @@ Check:
 
 ```bash
 kubectl get nodes
-kubectl get gateway -n nginx-gateway
+kubectl get gateway -n envoy-gateway
 kubectl get rollouts.argoproj.io -A
 ```
 
@@ -161,7 +161,7 @@ kubectl get pods -n argocd
 
 ## 6. Configure HTTP Mode
 
-The homelab exposes ArgoCD through NGINX Gateway Fabric over plain HTTP. ArgoCD
+The homelab exposes ArgoCD through Envoy Gateway over plain HTTP. ArgoCD
 server should therefore run in insecure mode behind the gateway.
 
 Apply:

@@ -511,6 +511,20 @@ Nodes will show `NotReady` until a CNI is installed — this is expected, not an
 KUBECONFIG=homelab.kubeconfig kubectl get nodes
 ```
 
+### Choose one networking stack
+
+Install exactly one primary CNI:
+
+- **Classic:** continue below with Calico and keep kube-proxy.
+- **Cilium/Istio/Envoy:** follow the fresh-cluster path in
+  [2B-Cilium-IstioAmbient-EnvoyGateway.md](../2-MetalLB-NGINXGatewayFabric/2B-Cilium-IstioAmbient-EnvoyGateway.md),
+  and disable kube-proxy in the generated Cluster API manifest before creating
+  the workload cluster.
+
+Do not install Calico first when the modern path was selected. The Calico and
+kube-proxy deletion commands in that runbook apply only to an existing classic
+cluster being converted.
+
 ### Install Calico
 
 The homelab LAN uses `192.168.0.0/24`, which overlaps with Calico's default `192.168.0.0/16` pod CIDR. Download the manifest and change its pod CIDR to the same non-overlapping range configured in `cluster.yaml` before applying it:

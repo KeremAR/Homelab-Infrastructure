@@ -6,7 +6,7 @@ metadata:
 spec:
   parentRefs:
     - name: shared-gateway
-      namespace: nginx-gateway
+      namespace: envoy-gateway
   hostnames:
     - grafana.192.168.0.110.nip.io
   rules:

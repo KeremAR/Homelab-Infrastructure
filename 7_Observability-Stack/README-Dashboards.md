@@ -17,7 +17,8 @@ The dashboard discovers nodes and component instances dynamically and covers:
 - Scheduler pending pods, attempt results, and p99 latency
 - Controller-manager workqueue depth
 - etcd leader state, database size, WAL fsync latency, and failed proposals
-- kube-proxy rule synchronization and pending changes
+- optional kube-proxy rule synchronization and pending changes; these panels
+  have no data when Cilium uses `kubeProxyReplacement: true`
 - CoreDNS response codes and request latency
 
 ---

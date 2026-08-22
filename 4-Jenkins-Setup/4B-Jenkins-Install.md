@@ -43,8 +43,8 @@ Earlier infrastructure steps should already be complete:
 ```text
 Kubernetes cluster is running
 MetalLB is installed
-NGINX Gateway Fabric is installed
-shared-gateway exists in namespace nginx-gateway
+Envoy Gateway is installed
+shared-gateway exists in namespace envoy-gateway
 Longhorn is installed
 longhorn-storageclass exists
 Helm is installed locally
@@ -56,7 +56,7 @@ Check:
 ```bash
 kubectl get nodes
 kubectl get sc
-kubectl get gateway -n nginx-gateway
+kubectl get gateway -n envoy-gateway
 helm version --short
 ```
 

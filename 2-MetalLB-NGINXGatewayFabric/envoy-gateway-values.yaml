@@ -1,0 +1,27 @@
+crds:
+  # Gateway API is installed once before Istio, and Envoy CRDs are installed by
+  # the dedicated gateway-crds-helm release. Avoid shared CRD ownership here.
+  enabled: false
+
+deployment:
+  replicas: 1
+  envoyGateway:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# Envoy Gateway exposes its own controller metrics on port 19001. These
+# default-compatible annotations let the existing Alloy pod discovery scrape it.
+  pod:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "19001"
+      prometheus.io/path: /metrics
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule

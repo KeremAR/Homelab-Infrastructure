@@ -9,25 +9,26 @@ collection agent. Run all commands from the repository root.
 - `kubectl` targets the `homelab` cluster.
 - Helm 3 is installed.
 - `longhorn-storageclass` exists.
-- `shared-gateway` exists in `nginx-gateway` and uses `192.168.0.110`.
+- `shared-gateway` exists in `envoy-gateway` and uses `192.168.0.110`.
 - Kubelet serving certificates are enabled and approved. Alloy verifies the
   kubelet HTTPS endpoint with the cluster CA.
 
 ```bash
 kubectl config current-context
 kubectl get storageclass longhorn-storageclass
-kubectl get gateway shared-gateway -n nginx-gateway
+kubectl get gateway shared-gateway -n envoy-gateway
 kubectl get nodes
 ```
 
 ## Expose Kubernetes component metrics
 
 The API server and CoreDNS metrics are already reachable through Kubernetes
-Services. kube-scheduler, kube-controller-manager, etcd, and kube-proxy use
-loopback metrics addresses by default, which normal Alloy pods cannot reach.
+Services. kube-scheduler, kube-controller-manager and etcd use loopback metrics
+addresses by default, which normal Alloy pods cannot reach. This cluster uses
+Cilium kube-proxy replacement, so there is no kube-proxy endpoint to expose.
 
 > These changes expose metrics ports on the node network. Use them only on a
-> trusted homelab network, or restrict TCP ports `10249`, `10257`, `10259`, and
+> trusted homelab network, or restrict TCP ports `10257`, `10259`, and
 > `2381` to the cluster node and Pod CIDRs with a firewall.
 
 On every control-plane node, back up and edit the static Pod manifests:
@@ -68,34 +69,39 @@ provisioning it.
 sudo ss -lntp | grep -E ':(2381|10257|10259)\b'
 ```
 
-Edit the kube-proxy ConfigMap:
+### Optional: expose kube-proxy metrics on a classic cluster
+
+Skip this section when Cilium runs with `kubeProxyReplacement: true`. If the
+classic networking option still uses kube-proxy, edit its ConfigMap:
 
 ```bash
 kubectl edit configmap kube-proxy -n kube-system
 ```
 
-Inside `data.config.conf`, change only `metricsBindAddress`:
+Set `metricsBindAddress` inside `data.config.conf`:
 
 ```yaml
 data:
   config.conf: |-
-    # Other existing KubeProxyConfiguration fields remain unchanged.
+    # Keep the other KubeProxyConfiguration fields unchanged.
     metricsBindAddress: "0.0.0.0:10249"
 ```
-
-Restart kube-proxy so every node uses the new value:
 
 ```bash
 kubectl rollout restart daemonset/kube-proxy -n kube-system
 kubectl rollout status daemonset/kube-proxy -n kube-system
 ```
 
+Then uncomment the optional `kube_proxy` discovery and scrape components in
+`metrics/alloy-metrics-config.yaml`. Port `10249` must also be restricted to
+the node and Pod networks when a firewall is used.
+
 The Alloy configuration scrapes these endpoints as follows:
 
 | Component | Target |
 |---|---|
 | kube-apiserver | `https://kubernetes.default.svc:443/metrics` |
-| kube-proxy | `<node-internal-ip>:10249/metrics` |
+| kube-proxy (classic option only) | `<node-internal-ip>:10249/metrics` |
 | kube-scheduler | `https://<control-plane-ip>:10259/metrics` |
 | kube-controller-manager | `https://<control-plane-ip>:10257/metrics` |
 | etcd | `http://<control-plane-ip>:2381/metrics` |

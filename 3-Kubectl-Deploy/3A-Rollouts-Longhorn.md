@@ -5,10 +5,10 @@ Goal: deploy the todo application manually with plain Kubernetes manifests first
 Prerequisites from earlier steps:
 
 - CAPI/Proxmox cluster is running.
-- Calico is installed.
+- Cilium is installed.
 - MetalLB is installed with pool `192.168.0.110-192.168.0.115`.
-- NGINX Gateway Fabric is installed.
-- `shared-gateway` exists in namespace `nginx-gateway`.
+- Envoy Gateway is installed.
+- `shared-gateway` exists in namespace `envoy-gateway`.
 - Current Gateway IP is `192.168.0.110`.
 
 ---
@@ -227,7 +227,7 @@ kubectl wait --for=condition=available deployment/argo-rollouts-dashboard \
   --timeout=180s
 ```
 
-Expose it through NGINX Gateway Fabric:
+Expose it through Envoy Gateway:
 
 ```bash
 kubectl apply -f 3-Kubectl-Deploy/argo-rollouts-dashboard-httproute.yaml

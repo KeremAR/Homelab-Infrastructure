@@ -1,5 +1,9 @@
 # MetalLB + NGINX Gateway Fabric — Setup Notes
 
+> This document records the existing MetalLB + NGINX Gateway Fabric baseline.
+> The optional direct replacement with Cilium, Istio Ambient and Envoy Gateway is documented
+> in [2B-Cilium-IstioAmbient-EnvoyGateway.md](./2B-Cilium-IstioAmbient-EnvoyGateway.md).
+
 Goal: bare-metal LoadBalancer support (MetalLB) + Gateway API ingress (NGINX Gateway Fabric, "NGF") on the Proxmox/CAPI cluster from the [main setup notes](./capi-proxmox-setup-notes.md).
 
 YAML manifests referenced below (IPAddressPool + L2Advertisement, the shared Gateway, test app) are kept as **separate files**, applied via `kubectl apply -f <file>` — not inlined here.

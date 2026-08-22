@@ -43,10 +43,10 @@ analysis:
 
 gateway:
   enabled: true
-  apiVersion: gateway.networking.k8s.io/v1beta1
+  apiVersion: gateway.networking.k8s.io/v1
   routeName: staging-frontend-route
   parentName: shared-gateway
-  parentNamespace: nginx-gateway
+  parentNamespace: envoy-gateway
   hostname: todo-app-staging.192.168.0.110.nip.io
   includeConfigRoute: true
 
