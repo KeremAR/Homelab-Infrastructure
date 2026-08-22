@@ -255,7 +255,7 @@ spec:
       templateID: 100
 ---
 # ==========================================
-# PVE2 İÇİN SEÇİLEN WORKER GRUBU (2 REPLICA)
+# PVE2 WORKER GRUBU (KUBEADM LAB İÇİN GEÇİCİ OLARAK 0 REPLICA)
 # ==========================================
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: MachineDeployment
@@ -266,7 +266,7 @@ metadata:
   namespace: default
 spec:
   clusterName: homelab
-  replicas: 2
+  replicas: 0
   selector:
     matchLabels: null
   template:

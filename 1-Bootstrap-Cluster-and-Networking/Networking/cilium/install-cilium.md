@@ -26,7 +26,7 @@ helm repo update
 helm upgrade --install cilium cilium/cilium \
   --version 1.20.1 \
   --namespace kube-system \
-  --values '1-Bootstrap Cluster/Networking/cilium/values.yaml' \
+  --values '1-Bootstrap-Cluster-and-Networking/Networking/cilium/values.yaml' \
   --wait --timeout 15m
 
 kubectl rollout status daemonset/cilium -n kube-system --timeout=10m
@@ -39,7 +39,7 @@ Skip this section when neither component was installed. A direct conversion is
 destructive and temporarily breaks Pod networking.
 
 ```bash
-kubectl delete -f '1-Bootstrap Cluster/Networking/calico/calico.yaml'
+kubectl delete -f '1-Bootstrap-Cluster-and-Networking/Networking/calico/calico.yaml'
 kubectl delete daemonset kube-proxy -n kube-system
 kubectl delete configmap kube-proxy -n kube-system
 ```

@@ -1,6 +1,7 @@
 # Install NGINX Gateway Fabric
 
-Install the shared Gateway API CRDs from `2-Gateway API/README.md` first.
+Install the shared Gateway API CRDs from
+`2-Gateway-API-and-MetalLB/README.md` first.
 
 The NGF Helm chart is pulled from the GHCR OCI registry. Authenticate before
 installation, even though the chart is public, to avoid GHCR's intermittent
@@ -26,7 +27,7 @@ helm upgrade --install ngf \
   --namespace nginx-gateway --create-namespace \
   --wait
 
-kubectl apply -f '2-Gateway API/nginx-gateway-fabric/shared-gateway.yaml'
+kubectl apply -f '2-Gateway-API-and-MetalLB/nginx-gateway-fabric/shared-gateway.yaml'
 kubectl get gateway,httproute -A
 ```
 
@@ -40,7 +41,7 @@ versions.
 `test-app.yaml` contains its own Deployment, Service and HTTPRoute:
 
 ```bash
-kubectl apply -f '2-Gateway API/nginx-gateway-fabric/test-app.yaml'
+kubectl apply -f '2-Gateway-API-and-MetalLB/nginx-gateway-fabric/test-app.yaml'
 kubectl get gateway,httproute -A
 
 GATEWAY_IP=$(kubectl get gateway shared-gateway -n nginx-gateway \
@@ -52,5 +53,5 @@ curl --resolve test.example.com:80:"$GATEWAY_IP" \
 Tear down the test application once it has been confirmed:
 
 ```bash
-kubectl delete -f '2-Gateway API/nginx-gateway-fabric/test-app.yaml'
+kubectl delete -f '2-Gateway-API-and-MetalLB/nginx-gateway-fabric/test-app.yaml'
 ```

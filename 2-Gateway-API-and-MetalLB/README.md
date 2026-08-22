@@ -12,7 +12,7 @@ The CRDs live here rather than under Istio because Gateway API is a shared
 Kubernetes API used by NGINX Gateway Fabric, Envoy Gateway and Istio waypoints.
 Istio must merely find the CRDs before a waypoint `Gateway` is created.
 
-Install [MetalLB](./common/metallb/README.md), then choose one north-south
+Install [MetalLB](./metallb/README.md), then choose one north-south
 controller:
 
 - [NGINX Gateway Fabric](./nginx-gateway-fabric/README.md)

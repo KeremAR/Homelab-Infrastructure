@@ -11,16 +11,16 @@ CIDR to the same non-overlapping `10.244.0.0/16` range configured in
 export KUBECONFIG="$PWD/homelab.kubeconfig"
 
 curl -L \
-  -o '1-Bootstrap Cluster/Networking/calico/calico.yaml' \
+  -o '1-Bootstrap-Cluster-and-Networking/Networking/calico/calico.yaml' \
   https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
 
 # Uncomment CALICO_IPV4POOL_CIDR.
 sed -i 's|.*- name: CALICO_IPV4POOL_CIDR.*|            - name: CALICO_IPV4POOL_CIDR|' \
-  '1-Bootstrap Cluster/Networking/calico/calico.yaml'
+  '1-Bootstrap-Cluster-and-Networking/Networking/calico/calico.yaml'
 
 # Use the same Pod CIDR declared in cluster.yaml.
 sed -i 's|.*value: "192.168.0.0/16".*|              value: "10.244.0.0/16"|' \
-  '1-Bootstrap Cluster/Networking/calico/calico.yaml'
+  '1-Bootstrap-Cluster-and-Networking/Networking/calico/calico.yaml'
 ```
 
 Before CAPI clones any VMs, the Proxmox VM template must use CPU type `host`.
@@ -35,7 +35,7 @@ Apply and verify:
 
 ```bash
 kubectl get nodes
-kubectl apply -f '1-Bootstrap Cluster/Networking/calico/calico.yaml'
+kubectl apply -f '1-Bootstrap-Cluster-and-Networking/Networking/calico/calico.yaml'
 
 kubectl rollout status deployment/calico-kube-controllers \
   -n kube-system --timeout=5m

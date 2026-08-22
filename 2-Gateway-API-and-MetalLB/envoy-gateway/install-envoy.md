@@ -16,11 +16,11 @@ helm template eg-crds oci://docker.io/envoyproxy/gateway-crds-helm \
 helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
   --version v1.9.0 \
   --namespace envoy-gateway-system --create-namespace \
-  --values '2-Gateway API/envoy-gateway/values.yaml' \
+  --values '2-Gateway-API-and-MetalLB/envoy-gateway/values.yaml' \
   --wait
 
-kubectl apply -f '2-Gateway API/envoy-gateway/shared-gateway.yaml'
-kubectl apply -f '2-Gateway API/envoy-gateway/envoy-proxy.yaml'
+kubectl apply -f '2-Gateway-API-and-MetalLB/envoy-gateway/shared-gateway.yaml'
+kubectl apply -f '2-Gateway-API-and-MetalLB/envoy-gateway/envoy-proxy.yaml'
 ```
 
 If the managed proxy is scheduled on the control-plane and MetalLB does not
@@ -42,7 +42,7 @@ If the observability namespace and Alloy Service already exist, enable the
 cross-namespace tracing reference:
 
 ```bash
-kubectl apply -f '2-Gateway API/envoy-gateway/alloy-referencegrant.yaml'
+kubectl apply -f '2-Gateway-API-and-MetalLB/envoy-gateway/alloy-referencegrant.yaml'
 ```
 
 With application namespaces in Istio STRICT mode, enroll the managed proxy and
