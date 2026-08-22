@@ -9,6 +9,14 @@ deployment:
 istio_namespace: istio-system
 
 external_services:
+  istio:
+    gateway_api_classes:
+      - name: Istio
+        class_name: istio
+      - name: Istio Waypoint
+        class_name: istio-waypoint
+      - name: Envoy Gateway
+        class_name: eg
   prometheus:
     url: http://prometheus-server.observability.svc.cluster.local:80
   grafana:

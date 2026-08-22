@@ -294,6 +294,9 @@ helm upgrade --install alloy grafana/alloy \
   --namespace observability \
   --values 7_Observability-Stack/alloy-values.yaml \
   --wait
+
+# Allow EnvoyProxy in envoy-gateway to reference Alloy across namespaces.
+kubectl apply -f '2-Gateway API/envoy-gateway/alloy-referencegrant.yaml'
 ```
 
 The Helm chart's config reloader only watches its primary ConfigMap and does

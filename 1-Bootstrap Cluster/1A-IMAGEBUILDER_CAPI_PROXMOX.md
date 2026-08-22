@@ -154,7 +154,7 @@ make build-proxmox-ubuntu-2404
 ```
 This process may take 15-60 minutes — Packer downloads the ISO, uploads it to Proxmox, creates the VM, installs the necessary packages (containerd, kubeadm, kubelet, kubectl) into it, and then converts the VM to a template.
 
-> **Required before provisioning — CPU type:** after the build completes, open the template in Proxmox and set `Hardware → Processors → Edit → CPU type` to `host`. Do this before CAPI clones any VMs. Otherwise, workloads such as recent Calico versions may fail because the default `kvm64` CPU exposes only x86-64-v1 instructions. See Issue 7 for the symptoms and recovery details.
+> **Required before provisioning — CPU type:** after the build completes, open the template in Proxmox and set `Hardware → Processors → Edit → CPU type` to `host`. Do this before CAPI clones any VMs. Otherwise, workloads such as recent Calico versions may fail because the default `kvm64` CPU exposes only x86-64-v1 instructions. See the [Calico installation notes](./Networking/calico/install-calico.md) for the symptoms.
 
 > **Multiple Proxmox nodes with local storage:** a template stored on `local`/`local-lvm` is available only on the node where it was built. If CAPI may place VMs on multiple nodes and you do not use shared storage, run the Image Builder command once per node, changing `PROXMOX_NODE` each time (for example, `pve1`, then `pve2`). Record the template VMID created on each node; the generated CAPI YAML must reference the matching `sourceNode` and `templateID`. Creating the template only on one node causes the clone failure documented after Step 8.
 
@@ -339,6 +339,25 @@ spec:
 
 The node-specific worker template pattern above is taken from [`cluster3.yaml`](../cluster3.yaml). When templates live on local storage, also ensure each machine template has the correct `sourceNode` and that node's `templateID`.
 
+### Disable kube-proxy when Cilium is the selected CNI
+
+Before `kubectl apply`, edit the generated `KubeadmControlPlane` only when the
+modern Cilium option was selected. This prevents kubeadm from installing
+kube-proxy because Cilium will implement the Kubernetes Service datapath with
+eBPF:
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+spec:
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      proxy:
+        disabled: true
+```
+
+Do not add this for the classic Calico option; that path keeps kube-proxy.
+
 ### Enable signed kubelet serving certificates before applying the YAML
 
 Before applying the generated CAPI YAML, configure both kubelet serving-certificate requests and API server verification. The serving CSRs remain `Pending` until `kubelet-csr-approver` is installed after Calico. During this bootstrap window, normal API operations such as `kubectl get` and `apply` work, but kubelet-proxied operations such as `logs` and `exec` may fail.
@@ -500,7 +519,7 @@ The owning `MachineDeployment` notices that a replica is missing and CAPI automa
 </details>
 
  
-## Step 9: Get kubeconfig, install Calico and finish kubelet TLS
+## Step 9: Get kubeconfig, install a CNI and finish kubelet TLS
  
 ```bash
 clusterctl get kubeconfig homelab > homelab.kubeconfig
@@ -511,50 +530,16 @@ Nodes will show `NotReady` until a CNI is installed — this is expected, not an
 KUBECONFIG=homelab.kubeconfig kubectl get nodes
 ```
 
-### Choose one networking stack
+Choose and install exactly one CNI from
+[Networking/README.md](./Networking/README.md). The component-specific install
+file owns all Calico or Cilium commands. Return here when every node is `Ready`.
 
-Install exactly one primary CNI:
-
-- **Classic:** continue below with Calico and keep kube-proxy.
-- **Cilium/Istio/Envoy:** follow the fresh-cluster path in
-  [2B-Cilium-IstioAmbient-EnvoyGateway.md](../2-MetalLB-NGINXGatewayFabric/2B-Cilium-IstioAmbient-EnvoyGateway.md),
-  and disable kube-proxy in the generated Cluster API manifest before creating
-  the workload cluster.
-
-Do not install Calico first when the modern path was selected. The Calico and
-kube-proxy deletion commands in that runbook apply only to an existing classic
-cluster being converted.
-
-### Install Calico
-
-The homelab LAN uses `192.168.0.0/24`, which overlaps with Calico's default `192.168.0.0/16` pod CIDR. Download the manifest and change its pod CIDR to the same non-overlapping range configured in `cluster.yaml` before applying it:
-
-```bash
-curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
-
-# Uncomment CALICO_IPV4POOL_CIDR
-sed -i 's|.*- name: CALICO_IPV4POOL_CIDR.*|            - name: CALICO_IPV4POOL_CIDR|' calico.yaml
-
-# Use the same pod CIDR configured in cluster.yaml
-sed -i 's|.*value: "192.168.0.0/16".*|              value: "10.244.0.0/16"|' calico.yaml
-
-kubectl --kubeconfig=homelab.kubeconfig apply -f calico.yaml
-```
-
-> Always use `--kubeconfig=homelab.kubeconfig` (or `KUBECONFIG=homelab.kubeconfig kubectl ...`) for anything targeting the workload cluster. A bare `kubectl` command still points at the kind management cluster.
-
-Wait, then verify:
-
-```bash
-KUBECONFIG=homelab.kubeconfig kubectl get pods -n kube-system
-KUBECONFIG=homelab.kubeconfig kubectl get nodes
-```
-
-Nodes should flip to `Ready` once Calico pods are `Running` on all of them.
+> Always use `--kubeconfig=homelab.kubeconfig` or export
+> `KUBECONFIG=homelab.kubeconfig` for commands targeting the workload cluster.
 
 ### Install `kubelet-csr-approver`
 
-The bootstrap patch makes every kubelet request a CA-signed serving certificate, but Kubernetes deliberately leaves `kubernetes.io/kubelet-serving` CSRs `Pending`. Manual approval is not a permanent solution because replacement nodes and certificate rotation create new CSRs. Install [`kubelet-csr-approver`](https://github.com/postfinance/kubelet-csr-approver) after Calico so these requests are validated and approved automatically:
+The bootstrap patch makes every kubelet request a CA-signed serving certificate, but Kubernetes deliberately leaves `kubernetes.io/kubelet-serving` CSRs `Pending`. Manual approval is not a permanent solution because replacement nodes and certificate rotation create new CSRs. Install [`kubelet-csr-approver`](https://github.com/postfinance/kubelet-csr-approver) after the selected CNI so these requests are validated and approved automatically:
 
 > Without `kubelet-csr-approver`, every serving CSR would have to be reviewed and approved manually with `kubectl certificate approve <csr-name>`, including CSRs created by new/replacement nodes and certificate rotation.
 
@@ -593,43 +578,6 @@ The API server verification flag was already installed from `cluster.yaml`; the 
 kubectl get --raw "/api/v1/nodes/$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')/proxy/healthz"
 kubectl logs -n kube-system deployment/kubelet-csr-approver --tail=20
 ```
-
-<details>
-<summary><strong>Issue 7 — nodes stuck NotReady: Calico init containers crash with "v2 microarchitecture" error</strong></summary>
-
-After CNI install (see Step 9), `calico-node` pods stuck in `Init:Error`:
-```bash
-kubectl logs calico-node-xxxxx -n kube-system -c upgrade-ipam
-# This program can only be run on AMD64 processors with v2 microarchitecture support.
-```
- 
-Root cause: the template VM (and any VM cloned from it) had **CPU type `kvm64`** in Proxmox — Proxmox's old default virtual CPU model, which only exposes **x86-64-v1** instruction set to the guest, regardless of what the underlying physical CPU (i5-6600T, which supports v3) actually supports. The Calico `v3.32.0` image requires v2 minimum, so it refuses to run.
- 
-Quick test fix (per-VM, not persistent): stop the VM → `Hardware → Processors → Edit → CPU type: host` → start. Calico pods went `Running` immediately.
- 
-**Permanent fix:** fix the *template* itself, not each cloned VM (since every new node is cloned from it and would otherwise hit this every time):
-
-**Hardware → Processors → Edit → CPU type: `host`**
-
-No `cpuType` field exists in CAPMOX's `ProxmoxMachineTemplate` schema (checked) — this has to be fixed at the template level in Proxmox, not via CAPI YAML.
- 
-After fixing the template: `kubectl delete cluster homelab`, regenerate + reapply → new VMs come up with `host` CPU type from the start, Calico goes `Running` without manual intervention.
- 
-</details>
----
-
-<details>
-<summary><strong>Issue 8 — pods unreachable from the LAN: Calico's default pod CIDR collides with the home network</strong></summary>
-
-**Root cause:** Calico's official manifest (`calico.yaml`) defaults to pod CIDR `192.168.0.0/16`. The homelab LAN is `192.168.0.0/24` (Proxmox host: `192.168.0.100`), which falls *inside* that `/16` range.
- 
-What goes wrong: a pod gets an IP like `192.168.204.135`. When that pod tries to reach `192.168.0.100` (the Proxmox host), Calico checks its pool — `192.168.0.100` falls inside `192.168.0.0/16`, so Calico assumes the destination is *another pod in the cluster* and skips IP masquerade (outgoing NAT). The packet leaves the VM with its raw pod-internal source IP (`192.168.204.135`). The Proxmox host receives it, tries to reply, but has no route back to `192.168.204.x` (that's the cluster's internal network, not the LAN) — reply gets dropped by the home router. Result: connections from pods to anything on the LAN hang and time out indefinitely, with no obvious error.
- 
-**Fix:** use a pod CIDR that cannot overlap with the LAN, such as `10.244.0.0/16`. Both `cluster.yaml` and the Calico manifest must use the same value. Step 8 patches `cluster.yaml`; the Calico installation commands above patch `calico.yaml` before it is applied.
- 
-**Takeaway:** always check the LAN subnet against the CNI's default pod CIDR before installing — this only surfaces as a silent timeout, not a clear error, so it's easy to lose time on.
- 
-</details>
 
 ## Step 10: Pivot — move CAPI from kind into the real cluster
  

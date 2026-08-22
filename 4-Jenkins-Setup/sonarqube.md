@@ -28,7 +28,7 @@ http://sonarqube.192.168.0.110.nip.io
 single-replica `longhorn-storageclass`: 2 GiB for PostgreSQL and 5 GiB for the
 SonarQube application.
 `sonarqube-postgresql-values.yaml` is used by the PostgreSQL Helm chart.
-`sonarqube-httproute.yaml` exposes SonarQube through NGINX Gateway Fabric.
+`sonarqube-httproute.yaml` exposes SonarQube through Envoy Gateway.
 
 ---
 
@@ -196,7 +196,7 @@ kubectl logs -n sonarqube statefulset/sonarqube-sonarqube
 
 ## 7. Expose SonarQube
 
-This cluster already uses NGINX Gateway Fabric and the shared Gateway IP
+This cluster already uses Envoy Gateway and the shared Gateway IP
 `192.168.0.110`, so SonarQube is exposed with HTTPRoute.
 
 ```bash
