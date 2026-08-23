@@ -1,5 +1,10 @@
+# Deploy with kubectl
 
-## 3. Create namespaces and GHCR secret
+This method applies the staging and production Kubernetes manifests directly,
+without Helm templating. Complete the prerequisites in the parent
+[deployment README](../README.md) first.
+
+## 1. Create namespaces and GHCR secret
 
 ```bash
 kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
@@ -19,10 +24,10 @@ Create the same secret in `production` before deploying production.
 
 ---
 
-## 4. Deploy staging
+## 2. Deploy staging
 
 ```bash
-kubectl apply -R -f 3-Kubectl-Deploy/staging
+kubectl apply -R -f '4-Deploy-App/kubectl/staging'
 kubectl get pods -n staging -w
 ```
 
@@ -43,7 +48,7 @@ http://todo-app-staging.192.168.0.110.nip.io
 
 ---
 
-## 5. Quick checks
+## 3. Quick checks
 
 ```bash
 kubectl get pods,pvc,httproute -n staging

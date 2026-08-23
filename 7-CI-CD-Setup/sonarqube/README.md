@@ -14,7 +14,7 @@ http://sonarqube.192.168.0.110.nip.io
 ## 1. Files
 
 ```text
-4-Jenkins-Setup/
+7-CI-CD-Setup/sonarqube/
   sonarqube.md
   sonarqube-secrets.yaml
   sonarqube-pvc.yaml
@@ -99,7 +99,7 @@ set -a
 source .env
 set +a
 
-envsubst < 4-Jenkins-Setup/sonarqube-secrets.yaml | kubectl apply -f -
+envsubst < 7-CI-CD-Setup/sonarqube/sonarqube-secrets.yaml | kubectl apply -f -
 ```
 
 Expected:
@@ -140,7 +140,7 @@ PostgreSQL is installed first because SonarQube needs a database at startup.
 Create its dedicated PVC before applying the PostgreSQL Helm values:
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/sonarqube-pvc.yaml
+kubectl apply -f 7-CI-CD-Setup/sonarqube/sonarqube-pvc.yaml
 kubectl get pvc sonarqube-postgresql-pvc sonarqube-data-pvc -n sonarqube
 ```
 
@@ -152,7 +152,7 @@ mounts this claim.
 helm upgrade --install sonarqube-postgresql bitnami/postgresql \
   --namespace sonarqube \
   --version 18.7.13 \
-  --values 4-Jenkins-Setup/sonarqube-postgresql-values.yaml \
+  --values 7-CI-CD-Setup/sonarqube/sonarqube-postgresql-values.yaml \
   --timeout 10m \
   --wait
 ```
@@ -177,7 +177,7 @@ manually created application claim instead of generating a PVC.
 helm upgrade --install sonarqube sonarqube/sonarqube \
   --namespace sonarqube \
   --version 2026.3.1 \
-  --values 4-Jenkins-Setup/sonarqube-values.yaml \
+  --values 7-CI-CD-Setup/sonarqube/sonarqube-values.yaml \
   --timeout 20m \
   --wait
 ```
@@ -200,7 +200,7 @@ This cluster already uses Envoy Gateway and the shared Gateway IP
 `192.168.0.110`, so SonarQube is exposed with HTTPRoute.
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/sonarqube-httproute.yaml
+kubectl apply -f 7-CI-CD-Setup/sonarqube/sonarqube-httproute.yaml
 kubectl get httproute -n sonarqube
 ```
 
@@ -245,7 +245,7 @@ source .env
 set +a
 export GITHUB_DOCKER_AUTH=$(printf "%s:%s" "$GITHUB_USERNAME" "$GITHUB_TOKEN" | base64 -w0)
 
-envsubst < 4-Jenkins-Setup/jenkins-secrets.yaml | kubectl apply -f -
+envsubst < 7-CI-CD-Setup/jenkins/jenkins-secrets.yaml | kubectl apply -f -
 ```
 
 Then upgrade Jenkins so JCasC creates:
@@ -384,7 +384,7 @@ SONAR_TOKEN in .env
 ```bash
 helm upgrade --install jenkins jenkins/jenkins \
   --namespace jenkins \
-  --values 4-Jenkins-Setup/jenkins-values.yaml \
+  --values 7-CI-CD-Setup/jenkins/jenkins-values.yaml \
   --timeout 10m \
   --wait
 ```

@@ -8,7 +8,7 @@ commands needed to bring Jenkins up.
 For how Jenkins works after installation, read:
 
 ```text
-4-Jenkins-Setup/4A-Jenkins.md
+7-CI-CD-Setup/jenkins/4A-Jenkins.md
 ```
 
 Jenkins URL after install:
@@ -22,7 +22,7 @@ http://jenkins.192.168.0.110.nip.io
 ## 1. Files
 
 ```text
-4-Jenkins-Setup/
+7-CI-CD-Setup/jenkins/
   4A-Jenkins.md
   4B-Jenkins-Install.md
   jenkins-rbac.yaml
@@ -236,7 +236,7 @@ Do not commit `.env`.
 ## 9. Create Namespace And RBAC
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/jenkins-rbac.yaml
+kubectl apply -f 7-CI-CD-Setup/jenkins/jenkins-rbac.yaml
 ```
 
 Check:
@@ -252,7 +252,7 @@ kubectl get role,rolebinding -n jenkins
 ## 10. Create Jenkins PVCs
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/jenkins-pvc.yaml
+kubectl apply -f 7-CI-CD-Setup/jenkins/jenkins-pvc.yaml
 kubectl get pvc -n jenkins
 ```
 
@@ -285,7 +285,7 @@ set +a
 Apply the declarative Secret manifest:
 
 ```bash
-envsubst < 4-Jenkins-Setup/jenkins-secrets.yaml | kubectl apply -f -
+envsubst < 7-CI-CD-Setup/jenkins/jenkins-secrets.yaml | kubectl apply -f -
 ```
 
 Check:
@@ -317,7 +317,7 @@ Build and push the CI Python runner:
 
 ```bash
 docker build \
-  -f 4-Jenkins-Setup/ci-python-test-runner.Dockerfile \
+  -f 7-CI-CD-Setup/jenkins/ci-python-test-runner.Dockerfile \
   -t ghcr.io/keremar/ci-python-test-runner:py3.11-v2 .
 
 docker push ghcr.io/keremar/ci-python-test-runner:py3.11-v2
@@ -327,7 +327,7 @@ Build and push the Kubernetes tools image:
 
 ```bash
 docker build \
-  -f 4-Jenkins-Setup/kubernetes-tools.Dockerfile \
+  -f 7-CI-CD-Setup/jenkins/kubernetes-tools.Dockerfile \
   -t ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-helm-3.20.1-argocd-3.4.2-rollouts-1.9.1 .
 
 docker push ghcr.io/keremar/kubernetes-tools:kubectl-1.36.1-helm-3.20.1-argocd-3.4.2-rollouts-1.9.1
@@ -349,7 +349,7 @@ Install or upgrade Jenkins:
 ```bash
 helm upgrade --install jenkins jenkins/jenkins \
   --namespace jenkins \
-  --values 4-Jenkins-Setup/jenkins-values.yaml \
+  --values 7-CI-CD-Setup/jenkins/jenkins-values.yaml \
   --timeout 10m \
   --wait
 ```
@@ -369,7 +369,7 @@ Jenkins controller should become `Running`.
 ## 14. Expose Jenkins
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/jenkins-httproute.yaml
+kubectl apply -f 7-CI-CD-Setup/jenkins/jenkins-httproute.yaml
 kubectl get httproute -n jenkins
 ```
 

@@ -1,21 +1,17 @@
-# Deploy Todo App with Kubectl
+# Longhorn
 
-Goal: deploy the todo application manually with plain Kubernetes manifests first. No Helm and no ArgoCD in this phase. Argo Rollouts is still required because the app resources are `Rollout`, not `Deployment`.
+Longhorn provides persistent block storage for workloads running on the
+Kubernetes cluster. It creates replicated volumes from storage registered on
+the Kubernetes nodes and dynamically provisions PersistentVolumes for PVCs.
 
-Prerequisites from earlier steps:
+The application PostgreSQL StatefulSets and the later CI/CD services depend on
+the `longhorn-storageclass` created in this step. Install Longhorn before Argo
+Rollouts and the application workloads.
 
-- CAPI/Proxmox cluster is running.
-- Cilium is installed.
-- MetalLB is installed with pool `192.168.0.110-192.168.0.115`.
-- Envoy Gateway is installed.
-- `shared-gateway` exists in namespace `envoy-gateway`.
-- Current Gateway IP is `192.168.0.110`.
+## Installation
 
----
-
-## 1. Install Longhorn
-
-PostgreSQL StatefulSets need a default `StorageClass`. Old K3s had `local-path` by default; this CAPI cluster does not. Longhorn is used here.
+The Cluster API workload cluster does not include a default persistent-storage
+provider, so Longhorn is installed explicitly.
 
 Install PSSH on the administration machine (the machine where `kubectl` and the SSH private key are available):
 
@@ -30,9 +26,9 @@ On Debian/Ubuntu, the command installed by the `pssh` package is named `parallel
 kubectl get nodes \
   -l node-role.kubernetes.io/node \
   -o jsonpath='{range .items[*]}root@{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' \
-  > longhorn-workers.txt
+  > '3-Longhorn/longhorn-workers.txt'
 
-cat longhorn-workers.txt
+cat '3-Longhorn/longhorn-workers.txt'
 ```
 
 The CAPI configuration adds `$HOME/.ssh/id_ed25519.pub` to the `root` user's `sshAuthorizedKeys`, so PSSH must connect as `root` with the matching private key.
@@ -42,14 +38,14 @@ When CAPI recreates a VM while reusing its previous IP address, the VM receives 
 ```bash
 while IFS= read -r host; do
   ssh-keygen -f "$HOME/.ssh/known_hosts" -R "${host#*@}"
-done < longhorn-workers.txt
+done < '3-Longhorn/longhorn-workers.txt'
 ```
 
 In a security-sensitive environment, verify each new host-key fingerprint through the Proxmox console before accepting it. Prepare the Longhorn storage path on all three workers in parallel:
 
 ```bash
 parallel-ssh \
-  -h longhorn-workers.txt \
+  -h '3-Longhorn/longhorn-workers.txt' \
   -i \
   -x "-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" \
   "mkdir -p /mnt/longhorn-storage"
@@ -60,7 +56,7 @@ Install the Longhorn node prerequisites on all workers in parallel. Package name
 ```bash
 # Debian/Ubuntu style
 parallel-ssh \
-  -h longhorn-workers.txt \
+  -h '3-Longhorn/longhorn-workers.txt' \
   -i \
   -x "-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" \
   "apt-get update && \
@@ -73,7 +69,7 @@ Longhorn nodes:
 
 ```bash
 parallel-ssh \
-  -h longhorn-workers.txt \
+  -h '3-Longhorn/longhorn-workers.txt' \
   -i \
   -x "-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" \
   "systemctl disable --now multipathd.service multipathd.socket"
@@ -152,14 +148,15 @@ Then apply:
 kubectl apply -f deploy/longhorn.yaml
 kubectl get pods -n longhorn-system -w
 kubectl get sc
+cd ..
 ```
 
 Expected: Longhorn creates the default StorageClass.
 
-Expose the Longhorn UI through NGF:
+Expose the Longhorn UI through the shared Envoy Gateway:
 
 ```bash
-kubectl apply -f 3-Kubectl-Deploy/longhorn-httproute.yaml
+kubectl apply -f '3-Longhorn/longhorn-httproute.yaml'
 ```
 
 UI:
@@ -173,75 +170,9 @@ single-replica StorageClass used explicitly by workloads that do not require
 three Longhorn data copies:
 
 ```bash
-kubectl apply -f 3-Kubectl-Deploy/longhorn-storageclass.yaml
+kubectl apply -f '3-Longhorn/longhorn-storageclass.yaml'
 kubectl get storageclass longhorn-storageclass
 ```
 
 This class is not marked as the cluster default. Workloads select it with
 `storageClassName: longhorn-storageclass`.
-
----
-
-## 2. Install Argo Rollouts
-
-```bash
-kubectl create namespace argo-rollouts --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl apply -n argo-rollouts \
-  -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
-
-kubectl wait --for=condition=ready pod \
-  -l app.kubernetes.io/name=argo-rollouts \
-  -n argo-rollouts \
-  --timeout=180s
-
-kubectl apply -f 3-Kubectl-Deploy/argo-rollouts-rbac.yaml
-```
-
-Optional CLI plugin:
-
-```bash
-curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
-chmod +x kubectl-argo-rollouts-linux-amd64
-sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
-```
-
-The CLI plugin can also start a temporary local dashboard:
-
-```bash
-kubectl argo rollouts dashboard
-```
-
-This command starts a local UI server, normally on `localhost:3100`. It is good
-for quick debugging, but the terminal process must keep running. For an always
-available dashboard, deploy the dashboard into the cluster instead.
-
-Install the dashboard Deployment, Service, and RBAC:
-
-```bash
-kubectl apply -n argo-rollouts \
-  -f https://github.com/argoproj/argo-rollouts/releases/latest/download/dashboard-install.yaml
-
-kubectl wait --for=condition=available deployment/argo-rollouts-dashboard \
-  -n argo-rollouts \
-  --timeout=180s
-```
-
-Expose it through Envoy Gateway:
-
-```bash
-kubectl apply -f 3-Kubectl-Deploy/argo-rollouts-dashboard-httproute.yaml
-kubectl get httproute -n argo-rollouts
-```
-
-UI:
-
-```text
-http://rollouts.192.168.0.110.nip.io
-```
-
-The Rollouts dashboard can promote, abort, and retry rollouts. It does not
-include its own login screen in this simple setup, so keep this route limited to
-the private homelab network.
-
----

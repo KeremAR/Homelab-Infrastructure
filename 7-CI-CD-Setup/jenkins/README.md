@@ -9,7 +9,7 @@ This is not the pipeline design document and not the install runbook.
 Install steps:
 
 ```text
-4-Jenkins-Setup/4B-Jenkins-Install.md
+7-CI-CD-Setup/jenkins/4B-Jenkins-Install.md
 ```
 
 Pipeline helper behavior:
@@ -67,7 +67,7 @@ This means deleting or restarting the Jenkins pod does not delete Jenkins home.
 The PVC is created before the Helm install:
 
 ```text
-4-Jenkins-Setup/jenkins-pvc.yaml
+7-CI-CD-Setup/jenkins/jenkins-pvc.yaml
 ```
 
 The controller PVC is the critical Jenkins data volume. Other Jenkins PVCs are
@@ -81,7 +81,7 @@ agent pod YAML used by the pipelines, not by the Jenkins controller itself.
 Jenkins is configured with Configuration as Code through:
 
 ```text
-4-Jenkins-Setup/jenkins-values.yaml
+7-CI-CD-Setup/jenkins/jenkins-values.yaml
 ```
 
 The Helm chart renders this into Jenkins Configuration as Code. In this setup,
@@ -246,7 +246,7 @@ not automatically mount a service account token into the agent containers.
 Kubernetes secrets are created by:
 
 ```text
-4-Jenkins-Setup/jenkins-secrets.yaml
+7-CI-CD-Setup/jenkins/jenkins-secrets.yaml
 ```
 
 JCasC reads secret values from controller environment variables and creates

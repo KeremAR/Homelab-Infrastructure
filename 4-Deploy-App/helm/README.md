@@ -29,7 +29,7 @@ helm version --short
 This directory contains one chart per service:
 
 ```text
-6-Helm-Deploy/
+4-Deploy-App/helm/
   frontend/
   user-service/
   todo-service/
@@ -112,33 +112,33 @@ kubectl get application -n argocd
 Render staging:
 
 ```bash
-helm template staging-user-service ./6-Helm-Deploy/user-service \
+helm template staging-user-service ./4-Deploy-App/helm/user-service \
   --namespace staging \
-  -f 6-Helm-Deploy/user-service/values-staging.yaml
+  -f 4-Deploy-App/helm/user-service/values-staging.yaml
 
-helm template staging-todo-service ./6-Helm-Deploy/todo-service \
+helm template staging-todo-service ./4-Deploy-App/helm/todo-service \
   --namespace staging \
-  -f 6-Helm-Deploy/todo-service/values-staging.yaml
+  -f 4-Deploy-App/helm/todo-service/values-staging.yaml
 
-helm template staging-frontend ./6-Helm-Deploy/frontend \
+helm template staging-frontend ./4-Deploy-App/helm/frontend \
   --namespace staging \
-  -f 6-Helm-Deploy/frontend/values-staging.yaml
+  -f 4-Deploy-App/helm/frontend/values-staging.yaml
 ```
 
 Render production:
 
 ```bash
-helm template production-user-service ./6-Helm-Deploy/user-service \
+helm template production-user-service ./4-Deploy-App/helm/user-service \
   --namespace production \
-  -f 6-Helm-Deploy/user-service/values-production.yaml
+  -f 4-Deploy-App/helm/user-service/values-production.yaml
 
-helm template production-todo-service ./6-Helm-Deploy/todo-service \
+helm template production-todo-service ./4-Deploy-App/helm/todo-service \
   --namespace production \
-  -f 6-Helm-Deploy/todo-service/values-production.yaml
+  -f 4-Deploy-App/helm/todo-service/values-production.yaml
 
-helm template production-frontend ./6-Helm-Deploy/frontend \
+helm template production-frontend ./4-Deploy-App/helm/frontend \
   --namespace production \
-  -f 6-Helm-Deploy/frontend/values-production.yaml
+  -f 4-Deploy-App/helm/frontend/values-production.yaml
 ```
 
 ---
@@ -166,45 +166,45 @@ or `--take-ownership`, Helm refuses to adopt resources it did not create.
 Staging:
 
 ```bash
-helm upgrade --install staging-user-service ./6-Helm-Deploy/user-service \
+helm upgrade --install staging-user-service ./4-Deploy-App/helm/user-service \
   --namespace staging \
   --create-namespace \
   --take-ownership \
-  -f 6-Helm-Deploy/user-service/values-staging.yaml
+  -f 4-Deploy-App/helm/user-service/values-staging.yaml
 
-helm upgrade --install staging-todo-service ./6-Helm-Deploy/todo-service \
+helm upgrade --install staging-todo-service ./4-Deploy-App/helm/todo-service \
   --namespace staging \
   --create-namespace \
   --take-ownership \
-  -f 6-Helm-Deploy/todo-service/values-staging.yaml
+  -f 4-Deploy-App/helm/todo-service/values-staging.yaml
 
-helm upgrade --install staging-frontend ./6-Helm-Deploy/frontend \
+helm upgrade --install staging-frontend ./4-Deploy-App/helm/frontend \
   --namespace staging \
   --create-namespace \
   --take-ownership \
-  -f 6-Helm-Deploy/frontend/values-staging.yaml
+  -f 4-Deploy-App/helm/frontend/values-staging.yaml
 ```
 
 Production:
 
 ```bash
-helm upgrade --install production-user-service ./6-Helm-Deploy/user-service \
+helm upgrade --install production-user-service ./4-Deploy-App/helm/user-service \
   --namespace production \
   --create-namespace \
   --take-ownership \
-  -f 6-Helm-Deploy/user-service/values-production.yaml
+  -f 4-Deploy-App/helm/user-service/values-production.yaml
 
-helm upgrade --install production-todo-service ./6-Helm-Deploy/todo-service \
+helm upgrade --install production-todo-service ./4-Deploy-App/helm/todo-service \
   --namespace production \
   --create-namespace \
   --take-ownership \
-  -f 6-Helm-Deploy/todo-service/values-production.yaml
+  -f 4-Deploy-App/helm/todo-service/values-production.yaml
 
-helm upgrade --install production-frontend ./6-Helm-Deploy/frontend \
+helm upgrade --install production-frontend ./4-Deploy-App/helm/frontend \
   --namespace production \
   --create-namespace \
   --take-ownership \
-  -f 6-Helm-Deploy/frontend/values-production.yaml
+  -f 4-Deploy-App/helm/frontend/values-production.yaml
 ```
 
 Check:
@@ -224,10 +224,10 @@ kubectl get rollouts.argoproj.io -n production
 For manual Helm testing, image tags can be overridden directly:
 
 ```bash
-helm upgrade --install staging-frontend ./6-Helm-Deploy/frontend \
+helm upgrade --install staging-frontend ./4-Deploy-App/helm/frontend \
   --namespace staging \
   --take-ownership \
-  -f 6-Helm-Deploy/frontend/values-staging.yaml \
+  -f 4-Deploy-App/helm/frontend/values-staging.yaml \
   --set image.tag=5ca78aa-v1.1-staging
 ```
 
@@ -261,7 +261,7 @@ Then run the Helm install commands from the previous section.
 ## 8. Resume ArgoCD
 
 Do not resume ArgoCD until the ArgoCD Applications are moved to the Helm chart
-paths. If ArgoCD still points to `3-Kubectl-Deploy/.../templates`, it will
+paths. If ArgoCD still points to `4-Deploy-App/kubectl/.../templates`, it will
 continue comparing against the old plain manifests.
 
 When ready, re-enable automated sync:

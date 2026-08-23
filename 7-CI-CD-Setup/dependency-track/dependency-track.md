@@ -12,7 +12,7 @@ http://dependency-track.192.168.0.110.nip.io
 ## 1. Files
 
 ```text
-4-Jenkins-Setup/
+7-CI-CD-Setup/dependency-track/
   dependency-track.md
   dependency-track-secrets.yaml
   dependency-track-pvc.yaml
@@ -42,7 +42,7 @@ set -a
 source .env
 set +a
 
-envsubst < 4-Jenkins-Setup/dependency-track-secrets.yaml | kubectl apply -f -
+envsubst < 7-CI-CD-Setup/dependency-track/dependency-track-secrets.yaml | kubectl apply -f -
 ```
 
 ## 3. Install Helm Repositories
@@ -71,7 +71,7 @@ cluster install. Create its dedicated PVC before applying the PostgreSQL Helm
 values:
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/dependency-track-pvc.yaml
+kubectl apply -f 7-CI-CD-Setup/dependency-track/dependency-track-pvc.yaml
 kubectl get pvc dependency-track-postgresql-pvc -n dependency-track
 ```
 
@@ -85,7 +85,7 @@ Then install PostgreSQL:
 helm upgrade --install dtrack-postgresql bitnami/postgresql \
   --namespace dependency-track \
   --version 18.7.13 \
-  --values 4-Jenkins-Setup/dependency-track-postgresql-values.yaml \
+  --values 7-CI-CD-Setup/dependency-track/dependency-track-postgresql-values.yaml \
   --timeout 10m \
   --wait
 ```
@@ -103,7 +103,7 @@ kubectl get pvc -n dependency-track
 helm upgrade --install dtrack dependency-track/dependency-track \
   --namespace dependency-track \
   --version 1.3.0 \
-  --values 4-Jenkins-Setup/dependency-track-values.yaml \
+  --values 7-CI-CD-Setup/dependency-track/dependency-track-values.yaml \
   --timeout 20m \
   --wait
 ```
@@ -123,7 +123,7 @@ kubectl get pvc -n dependency-track
 ## 6. Expose Dependency-Track
 
 ```bash
-kubectl apply -f 4-Jenkins-Setup/dependency-track-httproute.yaml
+kubectl apply -f 7-CI-CD-Setup/dependency-track/dependency-track-httproute.yaml
 kubectl get httproute -n dependency-track
 ```
 
@@ -164,11 +164,11 @@ source .env
 set +a
 
 export GITHUB_DOCKER_AUTH=$(printf "%s:%s" "$GITHUB_USERNAME" "$GITHUB_TOKEN" | base64 -w0)
-envsubst < 4-Jenkins-Setup/jenkins-secrets.yaml | kubectl apply -f -
+envsubst < 7-CI-CD-Setup/jenkins/jenkins-secrets.yaml | kubectl apply -f -
 
 helm upgrade --install jenkins jenkins/jenkins \
   --namespace jenkins \
-  --values 4-Jenkins-Setup/jenkins-values.yaml \
+  --values 7-CI-CD-Setup/jenkins/jenkins-values.yaml \
   --timeout 10m \
   --wait
 ```
