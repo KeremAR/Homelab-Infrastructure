@@ -843,7 +843,64 @@ It is a possible future standard integration layer for AI agents.
 
 ---
 
-## 18. Suggested Implementation Order
+
+## 18. Tools to Evaluate
+
+When this plan is implemented, these tools can be evaluated instead of building every part from zero.
+
+| Tool | Main Use in This Plan | Notes |
+|---|---|---|
+| **Prometheus** | Alert rules, basic anomaly detection, predictive alerts, simple forecasting | Can use PromQL functions such as `predict_linear()` |
+| **Alertmanager** | Alert grouping, inhibition, routing | Good for reducing alert noise before investigation |
+| **Loki** | Log source for incident investigation | Can be queried by an engineer or AI agent |
+| **Tempo** | Trace source and service dependency information | Useful for finding affected services and request paths |
+| **Robusta Classic** | Alert enrichment, Kubernetes context, rule-based playbooks, deterministic remediation | Open source and self-hosted. Optional if Alertmanager is enough |
+| **HolmesGPT** | AI incident triage, cross-source investigation, possible RCA, suggested actions | Open source. Can query Prometheus, Loki, Tempo, Kubernetes, ArgoCD, and other tools. Requires an LLM |
+| **Grafana Assistant Investigations** | Managed AI incident investigation | Similar goal to HolmesGPT, but provided as a Grafana product |
+| **Grafana MCP** | Give an AI agent access to Grafana data and tools | It is a tool interface, not an RCA system by itself |
+| **pgvector / Qdrant** | Search similar past incidents and support RAG | Useful later for incident memory, runbooks, and post-mortems |
+| **OPA / Kyverno** | Guardrails for automated actions | Can block unsafe agent or automation actions |
+| **ArgoCD** | Deployment and change history | Useful for checking if an incident started after a deployment |
+
+A possible open-source focused stack is:
+
+```text
+Prometheus + Alertmanager
+        |
+        v
+Robusta Classic (optional)
+        |
+        v
+HolmesGPT
+        |
+        +--> Prometheus
+        +--> Loki
+        +--> Tempo
+        +--> Kubernetes
+        +--> ArgoCD
+        |
+        v
+AI Triage / Possible RCA
+```
+
+Robusta Classic and HolmesGPT solve different problems:
+
+```text
+Robusta Classic
+= organize and enrich alerts
+  + run known playbooks
+
+HolmesGPT
+= investigate the incident
+  + collect context
+  + reason about possible root cause
+```
+
+These tools should be evaluated when implementation starts. The final choice can change because the AIOps and agent ecosystem is developing quickly.
+
+---
+
+## 19. Suggested Implementation Order
 
 A practical order for this project is:
 
