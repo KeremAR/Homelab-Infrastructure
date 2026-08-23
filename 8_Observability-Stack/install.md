@@ -131,9 +131,9 @@ Elasticsearch's StatefulSet PVC from the `volumeClaimTemplates` in
 `logs/elasticsearch.yaml`.
 
 ```bash
-kubectl apply -f 7_Observability-Stack/namespace.yaml
-kubectl apply -f 7_Observability-Stack/metrics/prometheus-pvc.yaml
-kubectl apply -f 7_Observability-Stack/grafana-pvc.yaml
+kubectl apply -f 8_Observability-Stack/namespace.yaml
+kubectl apply -f 8_Observability-Stack/metrics/prometheus-pvc.yaml
+kubectl apply -f 8_Observability-Stack/grafana-pvc.yaml
 ```
 
 Add these variables to the repository root `.env` file:
@@ -147,8 +147,8 @@ ELASTIC_PASSWORD=replace-with-a-strong-password
 set -a
 source .env
 set +a
-envsubst < 7_Observability-Stack/grafana-secrets.yaml | kubectl apply -f -
-envsubst < 7_Observability-Stack/logs/elastic-credentials-secret.yaml | kubectl apply -f -
+envsubst < 8_Observability-Stack/grafana-secrets.yaml | kubectl apply -f -
+envsubst < 8_Observability-Stack/logs/elastic-credentials-secret.yaml | kubectl apply -f -
 ```
 
 ## 3. Install Prometheus and its exporters
@@ -160,24 +160,24 @@ installed separately.
 ```bash
 helm upgrade --install prometheus prometheus-community/prometheus \
   --namespace observability \
-  --values 7_Observability-Stack/metrics/prometheus-values.yaml \
+  --values 8_Observability-Stack/metrics/prometheus-values.yaml \
   --wait
 
 helm upgrade --install kube-state-metrics prometheus-community/kube-state-metrics \
   --namespace observability \
-  --values 7_Observability-Stack/metrics/kube-state-metrics-values.yaml \
+  --values 8_Observability-Stack/metrics/kube-state-metrics-values.yaml \
   --wait
 
 helm upgrade --install blackbox-exporter prometheus-community/prometheus-blackbox-exporter \
   --namespace observability \
-  --values 7_Observability-Stack/metrics/blackbox-exporter-values.yaml \
+  --values 8_Observability-Stack/metrics/blackbox-exporter-values.yaml \
   --wait
 ```
 
 Expose the Prometheus web interface through the shared Gateway:
 
 ```bash
-kubectl apply -f 7_Observability-Stack/metrics/prometheus-httproute.yaml
+kubectl apply -f 8_Observability-Stack/metrics/prometheus-httproute.yaml
 ```
 
 Prometheus: <http://prometheus.192.168.0.110.nip.io>
@@ -204,8 +204,8 @@ helm upgrade --install elastic-operator elastic/eck-operator \
   --version 3.5.0 \
   --wait
 
-kubectl apply -f 7_Observability-Stack/logs/elasticsearch.yaml
-kubectl apply -f 7_Observability-Stack/logs/kibana.yaml
+kubectl apply -f 8_Observability-Stack/logs/elasticsearch.yaml
+kubectl apply -f 8_Observability-Stack/logs/kibana.yaml
 kubectl get elasticsearch -n observability
 kubectl get kibana -n observability
 kubectl get pods -n observability -w
@@ -219,14 +219,14 @@ Elasticsearch remains HTTPS-only.
 
 ```bash
 kubectl get pods,pvc -n observability
-kubectl apply -f 7_Observability-Stack/logs/kibana-httproute.yaml
+kubectl apply -f 8_Observability-Stack/logs/kibana-httproute.yaml
 ```
 
 Kibana: <http://kibana.192.168.0.110.nip.io>
 
 Log in as `elastic` with `ELASTIC_PASSWORD`. In Kibana, open **Stack
 Management → API Keys → Create API key** and use the role descriptor stored in
-`7_Observability-Stack/logs/alloy-api-key-role.json`. Copy the encoded API key
+`8_Observability-Stack/logs/alloy-api-key-role.json`. Copy the encoded API key
 and add the complete authorization value to `.env`:
 
 ```dotenv
@@ -239,7 +239,7 @@ Create the Secret consumed by Alloy:
 set -a
 source .env
 set +a
-envsubst < 7_Observability-Stack/logs/elastic-key-secret.yaml | kubectl apply -f -
+envsubst < 8_Observability-Stack/logs/elastic-key-secret.yaml | kubectl apply -f -
 ```
 
 ECK creates `logs-es-http-certs-public`. Alloy mounts this Secret directly and
@@ -253,14 +253,14 @@ v2 Service exposes both OTLP and the query UI.
 ```bash
 helm upgrade --install jaeger jaegertracing/jaeger \
   --namespace observability \
-  --values 7_Observability-Stack/traces/jaeger-values.yaml \
+  --values 8_Observability-Stack/traces/jaeger-values.yaml \
   --wait
 ```
 
 Expose the Jaeger query UI through the shared Gateway:
 
 ```bash
-kubectl apply -f 7_Observability-Stack/traces/jaeger-httproute.yaml
+kubectl apply -f 8_Observability-Stack/traces/jaeger-httproute.yaml
 ```
 
 Jaeger: <http://jaeger.192.168.0.110.nip.io>
@@ -285,14 +285,14 @@ kube-state-metrics and a Service annotation for CoreDNS. An annotated Service
 must expose its metrics port with the name `metrics`.
 
 ```bash
-kubectl apply -f 7_Observability-Stack/alloy-bootstrap-config.yaml
-kubectl apply -f 7_Observability-Stack/metrics/alloy-metrics-config.yaml
-kubectl apply -f 7_Observability-Stack/logs/alloy-logs-config.yaml
-kubectl apply -f 7_Observability-Stack/traces/alloy-traces-config.yaml
+kubectl apply -f 8_Observability-Stack/alloy-bootstrap-config.yaml
+kubectl apply -f 8_Observability-Stack/metrics/alloy-metrics-config.yaml
+kubectl apply -f 8_Observability-Stack/logs/alloy-logs-config.yaml
+kubectl apply -f 8_Observability-Stack/traces/alloy-traces-config.yaml
 
 helm upgrade --install alloy grafana/alloy \
   --namespace observability \
-  --values 7_Observability-Stack/alloy-values.yaml \
+  --values 8_Observability-Stack/alloy-values.yaml \
   --wait
 
 # Allow EnvoyProxy in envoy-gateway to reference Alloy across namespaces.
@@ -304,9 +304,9 @@ not watch the projected signal ConfigMaps. After editing one of them, apply it
 and restart Alloy:
 
 ```bash
-kubectl apply -f 7_Observability-Stack/metrics/alloy-metrics-config.yaml
-kubectl apply -f 7_Observability-Stack/logs/alloy-logs-config.yaml
-kubectl apply -f 7_Observability-Stack/traces/alloy-traces-config.yaml
+kubectl apply -f 8_Observability-Stack/metrics/alloy-metrics-config.yaml
+kubectl apply -f 8_Observability-Stack/logs/alloy-logs-config.yaml
+kubectl apply -f 8_Observability-Stack/traces/alloy-traces-config.yaml
 kubectl rollout restart daemonset/alloy -n observability
 kubectl rollout status daemonset/alloy -n observability
 ```
@@ -314,7 +314,7 @@ kubectl rollout status daemonset/alloy -n observability
 Expose the Alloy UI through the shared Gateway:
 
 ```bash
-kubectl apply -f 7_Observability-Stack/alloy-httproute.yaml
+kubectl apply -f 8_Observability-Stack/alloy-httproute.yaml
 ```
 
 Alloy: <http://alloy.192.168.0.110.nip.io>
@@ -334,14 +334,14 @@ script to discover a generated UID. Logs are explored in Kibana Discover.
 ```bash
 helm upgrade --install grafana grafana-community/grafana \
   --namespace observability \
-  --values 7_Observability-Stack/grafana-values.yaml \
+  --values 8_Observability-Stack/grafana-values.yaml \
   --wait
 ```
 
 Expose the Grafana UI through the shared Gateway:
 
 ```bash
-kubectl apply -f 7_Observability-Stack/grafana-httproute.yaml
+kubectl apply -f 8_Observability-Stack/grafana-httproute.yaml
 ```
 
 Grafana: <http://grafana.192.168.0.110.nip.io>
@@ -349,15 +349,27 @@ Grafana: <http://grafana.192.168.0.110.nip.io>
 ## 8. Install the dashboards
 
 ```bash
-kubectl apply -f 7_Observability-Stack/dashboards/dashboard-memory-analysis.yaml
-kubectl apply -f 7_Observability-Stack/dashboards/dashboard-global-sre-overview.yaml
-kubectl apply -f 7_Observability-Stack/dashboards/dashboard-infrastructure-cluster.yaml
-kubectl apply -f 7_Observability-Stack/dashboards/dashboard-microservice-detail.yaml
-kubectl apply -f 7_Observability-Stack/dashboards/dashboard-kubernetes-components.yaml
+kubectl apply -f 8_Observability-Stack/dashboards/dashboard-memory-analysis.yaml
+kubectl apply -f 8_Observability-Stack/dashboards/dashboard-global-sre-overview.yaml
+kubectl apply -f 8_Observability-Stack/dashboards/dashboard-infrastructure-cluster.yaml
+kubectl apply -f 8_Observability-Stack/dashboards/dashboard-microservice-detail.yaml
+kubectl apply -f 8_Observability-Stack/dashboards/dashboard-kubernetes-components.yaml
+
+# Official dashboards, pinned to the installed component versions
+kubectl apply --server-side -k 8_Observability-Stack/dashboards/official/istio
+kubectl apply --server-side -k 8_Observability-Stack/dashboards/official/cilium
+kubectl apply --server-side -k 8_Observability-Stack/dashboards/official/envoy-gateway
 ```
 
 The Grafana sidecar loads ConfigMaps labeled `grafana_dashboard: "1"`
-automatically; Grafana does not need to be restarted.
+automatically; Grafana does not need to be restarted. The official dashboards
+use the existing Prometheus datasource and do not deploy another observability
+backend. See `dashboards/official/README.md` for source versions and the one
+intentional Cilium dashboard omission.
+
+Server-side apply is used because client-side apply stores the complete
+ConfigMap in the `last-applied-configuration` annotation. The larger official
+dashboard bundles would exceed Kubernetes' 256 KiB annotation limit.
 
 ## 9. Verify the installation
 

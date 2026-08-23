@@ -29,6 +29,11 @@ policyEnforcementMode: default
 bpf:
   hostLegacyRouting: false
 
+# Expose Cilium agent metrics on each cilium pod at :9962/metrics. Alloy keeps
+# this endpoint separate from Hubble metrics on the same multi-port pod.
+prometheus:
+  enabled: true
+
 # Required when Istio is used with Cilium socket-level load balancing.
 socketLB:
   enabled: true
@@ -52,9 +57,14 @@ hubble:
   ui:
     enabled: true
   metrics:
+    # Expose Hubble flow metrics on each cilium pod at :9965/metrics. These are
+    # scraped separately from the Cilium agent metrics on port 9962.
+    enableOpenMetrics: true
     enabled:
-      - dns:query;ignoreAAAA
-      - drop
-      - tcp
-      - flow
-      - icmp
+      # Namespace labels are needed by Cilium's official namespace dashboards.
+      - dns:query;ignoreAAAA;labelsContext=source_namespace,destination_namespace
+      - drop:labelsContext=source_namespace,destination_namespace
+      - tcp:labelsContext=source_namespace,destination_namespace
+      - flow:labelsContext=source_namespace,destination_namespace
+      - icmp:labelsContext=source_namespace,destination_namespace
+      - port-distribution:labelsContext=source_namespace,destination_namespace

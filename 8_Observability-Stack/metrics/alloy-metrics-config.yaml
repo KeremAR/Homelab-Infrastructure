@@ -90,6 +90,14 @@ data:
         action        = "keep"
         regex         = "true"
       }
+
+      // Cilium advertises several ports from one annotated pod. Scrape its
+      // agent and Hubble endpoints once each in the dedicated pipelines below.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_k8s_app"]
+        action        = "drop"
+        regex         = "cilium"
+      }
       
       // Use custom port from annotation if specified
       rule {
@@ -120,6 +128,12 @@ data:
         source_labels = ["__meta_kubernetes_pod_container_name"]
         target_label  = "container"
       }
+      // Preserve the Cilium operator label expected by its official dashboard.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_io_cilium_app"]
+        target_label  = "io_cilium_app"
+        regex         = "(.+)"
+      }
       rule {
         source_labels = ["__meta_kubernetes_pod_phase"]
         target_label  = "pod_phase"
@@ -132,14 +146,125 @@ data:
     }
 
     prometheus.scrape "k8s_pods" {
-      targets    = discovery.relabel.k8s_pods.output
-      forward_to = [prometheus.remote_write.prometheus.receiver]
+      targets         = discovery.relabel.k8s_pods.output
+      scrape_interval = "15s"
+      forward_to      = [prometheus.remote_write.prometheus.receiver]
       clustering {
         enabled = true
       }
     }
 
-    // --- 4. ARGO ROLLOUTS METRICS ---
+    // --- 4. CILIUM AGENT AND HUBBLE METRICS ---
+    // Cilium exposes two Prometheus endpoints from the same DaemonSet pod:
+    // :9962 for the Cilium agent and :9965 for Hubble flow metrics. Although
+    // the chart annotates the agent endpoint, the generic pipeline deliberately
+    // excludes these multi-port pods to prevent duplicate scrapes.
+    discovery.kubernetes "cilium_pods" {
+      role = "pod"
+      namespaces {
+        names = ["kube-system"]
+      }
+    }
+
+    discovery.relabel "cilium_agent" {
+      targets = discovery.kubernetes.cilium_pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_k8s_app"]
+        action        = "keep"
+        regex         = "cilium"
+      }
+
+      // Keep the declared agent metrics port only. Filtering before relabeling
+      // avoids scraping the same pod once for each of its container ports.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_port_number"]
+        action        = "keep"
+        regex         = "9962"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        replacement  = "homelab"
+        target_label = "cluster"
+      }
+      rule {
+        replacement  = "cilium"
+        target_label = "k8s_app"
+      }
+      rule {
+        replacement  = "cilium-agent"
+        target_label = "job"
+      }
+    }
+
+    prometheus.scrape "cilium_agent" {
+      targets         = discovery.relabel.cilium_agent.output
+      scrape_interval = "15s"
+      forward_to      = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    discovery.relabel "hubble" {
+      targets = discovery.kubernetes.cilium_pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_k8s_app"]
+        action        = "keep"
+        regex         = "cilium"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_port_number"]
+        action        = "keep"
+        regex         = "9965"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        replacement  = "homelab"
+        target_label = "cluster"
+      }
+      rule {
+        replacement  = "hubble"
+        target_label = "job"
+      }
+    }
+
+    prometheus.scrape "hubble" {
+      targets         = discovery.relabel.hubble.output
+      scrape_interval = "15s"
+      forward_to      = [prometheus.remote_write.prometheus.receiver]
+      clustering {
+        enabled = true
+      }
+    }
+
+    // --- 5. ARGO ROLLOUTS METRICS ---
     prometheus.scrape "argo_rollouts" {
       targets = [{
         __address__ = "argo-rollouts-metrics.argo-rollouts.svc.cluster.local:8090",
@@ -151,7 +276,7 @@ data:
       }
     }
     
-    // --- 5. CLUSTER-LEVEL METRICS: Annotated Service Endpoints ---
+    // --- 6. CLUSTER-LEVEL METRICS: Annotated Service Endpoints ---
     // Pod and EndpointSlice discovery may run together. To avoid duplicate
     // ingestion, annotate either the Pod template or the Service for a given
     // workload, not both. Annotated Services must name their metrics port

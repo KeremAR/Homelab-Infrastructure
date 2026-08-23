@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: observability
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Cilium
+
+configMapGenerator:
+  - name: grafana-dashboards-cilium-official
+    files:
+      - cilium-dashboard.json
+      - cilium-operator-dashboard.json
+      - hubble-dashboard.json
+      - hubble-dns-namespace.json
+      - hubble-network-overview-namespace.json
