@@ -2,7 +2,11 @@
 
 This document describes possible future improvements for the observability system.
 
-The goal is to use AIOps ideas without depending on a large AI model. Most of these steps can be done with metrics, logs, traces, rules, statistics, and automation.
+The goal is to use AIOps ideas without depending on a large AI model at the beginning. Most of the first steps can be done with metrics, logs, traces, rules, statistics, and automation.
+
+AI can be added later as an optional incident triage and root-cause analysis layer.
+
+---
 
 ## 1. Connect Telemetry Data
 
@@ -340,6 +344,16 @@ System problems often start after a change.
 
 Deployment and configuration events should be connected with observability data.
 
+Possible sources:
+
+- ArgoCD application history
+- Git commit history
+- Kubernetes events
+- ConfigMap changes
+- Secret changes
+- Helm changes
+- Terraform changes
+
 Example:
 
 ```text
@@ -367,11 +381,117 @@ payment-service v2.6 -> v2.7
 7 minutes ago
 ```
 
+The system should not directly say that the deployment is the root cause.
+
+It can mark it as a suspicious recent change.
+
 This can reduce investigation time because engineers can quickly see if a recent change may be related to the incident.
 
 ---
 
-## 9. Automated Remediation
+## 9. Create an Incident Context
+
+Before using an AI model, the system should prepare a useful incident context.
+
+The system should collect only the important information.
+
+Possible incident context:
+
+```text
+Service:
+payment-service
+
+Alert:
+HTTP 5xx > 20%
+
+Metrics:
+- Memory usage is increasing
+- p95 latency increased from 120 ms to 2.8 s
+- Pod restarted 4 times
+
+Logs:
+- connection pool exhausted
+- database timeout
+
+Traces:
+checkout -> payment -> postgresql
+PostgreSQL span latency: 4.1 s
+
+Recent changes:
+payment-service v2.7 deployed 8 minutes ago
+
+Affected services:
+- checkout-service
+- frontend
+```
+
+This is more useful than sending all raw metrics, logs, and traces to an AI model.
+
+It also reduces noise and makes root-cause analysis easier.
+
+---
+
+## 10. Search Similar Past Incidents
+
+Past incidents can help with new incidents.
+
+Each completed incident can be stored with information such as:
+
+- Service
+- Alerts
+- Important log messages
+- Root cause
+- Fix
+- Deployment information
+- Runbook
+- Final incident report
+
+Example:
+
+```text
+Incident #182
+
+Service:
+payment-service
+
+Error:
+connection pool exhausted
+
+Root cause:
+max_connections was configured incorrectly
+
+Resolution:
+rollback ConfigMap
+```
+
+Later, if a similar incident happens, the system can search old incidents.
+
+Example:
+
+```text
+Current incident:
+payment-service
+connection pool exhausted
+
+Similar incident:
+Incident #182
+```
+
+In the future, this can use a vector database and RAG.
+
+Possible tools:
+
+- pgvector
+- Qdrant
+- Weaviate
+
+The goal is not to let AI guess from nothing.
+
+The goal is to give AI useful information from real past incidents.
+
+---
+
+## 11. Automated Remediation
 
 After detection and correlation are reliable, some incidents can be connected to automated actions.
 
@@ -420,6 +540,7 @@ Possible safe actions:
 - Restart a deployment
 - Increase replicas
 - Clear a safe cache
+- Change a temporary log level
 - Run a known recovery script
 
 High-risk actions should still require an engineer.
@@ -428,25 +549,172 @@ Examples:
 
 - Database restart
 - Delete PersistentVolume data
+- Change IAM permissions
 - Change network routes
+- Production scale-down
 - Delete important resources
 
-The goal is not to automate everything. The goal is to automate only known, repeatable, and safe recovery actions.
+The goal is not to automate everything.
+
+The goal is to automate only known, repeatable, low-risk, and reversible recovery actions.
 
 ---
 
-## 10. AI-Assisted Root Cause Analysis
+## 12. Add Guardrails
 
-AI can be added as the last step.
+An agent or automation should never have unlimited access.
 
-This is optional.
+Each automated action should pass through a guardrail layer.
 
-The observability system should first collect and correlate the important data.
-
-Example incident context:
+Example allow-list:
 
 ```text
-Service: payment-service
+Allowed:
+- restart stateless pod
+- restart selected deployment
+- scale replicas up
+- clear approved cache
+- run approved script
+
+Not allowed:
+- delete database
+- delete PersistentVolume
+- change IAM policy
+- change production network route
+```
+
+The automation should not be able to run actions outside this list.
+
+For critical actions, use human approval.
+
+Example:
+
+```text
+Agent suggests action
+        |
+        v
+System checks policy
+        |
+        v
+Engineer approves
+        |
+        v
+Action runs
+```
+
+Policy-as-code tools such as OPA or Kyverno can also be used as part of this validation layer.
+
+---
+
+## 13. Add Audit Trail and Dry-Run Mode
+
+Every automated decision should be visible and recorded.
+
+The system should log:
+
+- What incident started the action
+- What data was used
+- What action was suggested
+- Why the action was suggested
+- Whether a human approved it
+- What command or API call was executed
+- What happened after the action
+
+New automation should first run in dry-run or recommendation-only mode.
+
+Example:
+
+```text
+Week 1-2:
+Detect and recommend only
+
+Week 3-4:
+Compare recommendations with engineer decisions
+
+Later:
+Enable automation for safe cases
+```
+
+This helps build confidence before giving the system more control.
+
+---
+
+## 14. AI Agent for Incident Triage
+
+AI should be added after the basic observability and correlation layers are working.
+
+The AI agent should not replace Prometheus, Loki, Tempo, or Alertmanager.
+
+It should work above them.
+
+Example architecture:
+
+```text
+                   Alert
+                     |
+                     v
+                 AI Agent
+                     |
+       +-------------+-------------+
+       |             |             |
+       v             v             v
+  Prometheus        Loki          Tempo
+       |
+       +------ Kubernetes API
+       |
+       +------ ArgoCD history
+       |
+       +------ Git history
+       |
+       +------ Incident database
+       |
+       v
+              Incident Context
+                     |
+                     v
+                    LLM
+                     |
+                     v
+            Possible Root Cause
+            Suggested Actions
+                     |
+              +------+------+
+              |             |
+              v             v
+           Engineer      Runbook
+```
+
+The agent can collect the information that an engineer normally collects manually.
+
+For example:
+
+- Related metrics
+- Important logs
+- Related traces
+- Kubernetes events
+- Recent deployments
+- Recent Git changes
+- Similar old incidents
+
+The agent then creates one clear incident summary.
+
+At this stage, the agent should mainly help with triage.
+
+It should collect context and make suggestions.
+
+The final decision should still be made by an engineer for risky cases.
+
+---
+
+## 15. AI-Assisted Root Cause Analysis
+
+After the incident context is ready, it can be sent to an AI model.
+
+Example input:
+
+```text
+Service:
+payment-service
 
 Signals:
 - Memory usage is increasing
@@ -462,64 +730,214 @@ Related logs:
 Affected services:
 - checkout-service
 - frontend
+
+Similar old incident:
+ConfigMap changed database pool settings incorrectly
 ```
 
-This context can be sent to an AI model.
-
-The question can be:
+Possible questions:
 
 ```text
 What is the most likely root cause?
 What should the engineer check first?
+Which recent change is suspicious?
+Is there a similar past incident?
 ```
 
 The AI can return something like:
 
 ```text
 Possible root cause:
-The new payment-service deployment may have introduced a memory problem.
+The new payment-service deployment may have introduced an incorrect database connection pool configuration.
 
 Recommended checks:
-1. Compare the new version with the previous version.
-2. Check heap and memory usage.
-3. Check recent application errors.
-4. Consider rollback if the problem started after deployment.
+1. Compare the new configuration with the previous version.
+2. Check the database connection pool settings.
+3. Check memory usage after the deployment.
+4. Consider rollback if the incident started after this change.
 ```
-
-The AI should not receive raw, unfiltered monitoring data if it is not needed.
-
-It is better to first prepare a small incident summary with:
-
-- Important metrics
-- Important logs
-- Important traces
-- Recent deployments
-- Dependency information
-- Related alerts
-
-Then the AI can help with root-cause analysis.
 
 The AI should be treated as an assistant, not as the final source of truth.
 
 ---
 
-## Suggested Implementation Order
+## 16. RAG for Better RCA
+
+RAG can improve AI-assisted RCA.
+
+The AI should not only use the current incident.
+
+It can also receive useful information from:
+
+- Previous incidents
+- Runbooks
+- Post-mortems
+- Architecture documents
+- Known problems
+- Service documentation
+
+Example:
+
+```text
+Current incident
+       +
+Similar old incident
+       +
+Relevant runbook
+       +
+Service documentation
+       |
+       v
+      LLM
+       |
+       v
+Better RCA suggestion
+```
+
+A vector database can be used to search this information.
+
+This should be added later because it requires an embedding model and more AI infrastructure.
+
+---
+
+## 17. MCP as a Future Integration Layer
+
+In the future, MCP can be used to give AI agents standard access to tools.
+
+Without a standard layer:
+
+```text
+Agent
+ |- custom Prometheus integration
+ |- custom Kubernetes integration
+ |- custom Git integration
+ |- custom ArgoCD integration
+```
+
+With MCP:
+
+```text
+               Agent
+                 |
+                 v
+                MCP
+       +---------+---------+
+       |         |         |
+       v         v         v
+  Prometheus   Kubernetes  Git
+```
+
+Possible tools that could later be exposed through MCP:
+
+- Kubernetes API
+- Prometheus
+- Loki
+- Tempo
+- ArgoCD
+- Git repositories
+- Terraform information
+
+This is not required for the first version.
+
+It is a possible future standard integration layer for AI agents.
+
+---
+
+## 18. Suggested Implementation Order
 
 A practical order for this project is:
 
 1. Connect metrics, logs, and traces.
 2. Add common service labels and `trace_id`.
 3. Improve Alertmanager grouping.
-4. Add alert inhibition rules.
+4. Add Alertmanager inhibition rules.
 5. Add alert correlation.
 6. Add anomaly detection.
 7. Add predictive alerts.
 8. Add time-series forecasting.
 9. Use traces for service topology.
 10. Correlate incidents with deployments and configuration changes.
-11. Add runbook-based remediation.
-12. Allow automatic remediation only for known cases with high confidence.
-13. Add AI-assisted root-cause analysis as the final optional layer.
+11. Create one structured incident context.
+12. Store completed incidents and their root causes.
+13. Add runbook-based remediation.
+14. Add guardrails and an allowed-action list.
+15. Add audit logs for every automated action.
+16. Run new automation in dry-run mode first.
+17. Allow automatic remediation only for known, low-risk cases with high confidence.
+18. Add an AI agent for incident triage.
+19. Add AI-assisted root-cause analysis.
+20. Add RAG with old incidents and runbooks.
+21. Consider MCP for standard agent-to-tool integrations.
+
+---
+
+## Final Architecture
+
+The long-term architecture can look like this:
+
+```text
+                         Applications
+                              |
+              +---------------+---------------+
+              |               |               |
+              v               v               v
+         Prometheus          Loki            Tempo
+           Metrics           Logs            Traces
+              |               |               |
+              +-------+-------+-------+-------+
+                      |               |
+                      v               v
+                 Detection        Topology
+                      |
+          +-----------+-----------+
+          |           |           |
+          v           v           v
+      Alerts      Anomalies   Predictions
+          |
+          v
+     Alertmanager
+          |
+     Group / Inhibit
+          |
+          v
+       Incident
+          |
+          v
+    Incident Context
+          |
+   +------+------+----------------+
+   |             |                |
+   v             v                v
+Metrics/Logs   Changes       Past Incidents
+/Traces       ArgoCD/Git       RAG/Search
+   |             |                |
+   +-------------+----------------+
+                 |
+                 v
+              AI Agent
+                 |
+                 v
+        Possible Root Cause
+        + Suggested Actions
+                 |
+          +------+------+
+          |             |
+          v             v
+       Engineer      Runbook
+                        |
+                   Guardrails
+                        |
+                 High confidence?
+                        |
+                   +----+----+
+                   |         |
+                  No        Yes
+                   |         |
+                   v         v
+                Engineer   Execute
+```
+
+---
 
 ## Final Goal
 
@@ -550,16 +968,25 @@ Metrics + Logs + Traces
    Alert Correlation
           |
           v
-    Prediction
+     Prediction
           |
           v
-   Incident Summary
+ Deployment / Change Correlation
           |
           v
-Possible Root Cause
+   Incident Context
           |
           v
- Runbook / Engineer / AI
+ Similar Past Incidents
+          |
+          v
+ AI-Assisted RCA
+          |
+          v
+ Runbook / Engineer
+          |
+          v
+ Guardrails
           |
           v
      Remediation
@@ -580,9 +1007,17 @@ These alerts are related.
 
 This service may be the root cause.
 
+This recent deployment may be related.
+
+A similar incident happened before.
+
 This problem may become critical soon.
 
 This runbook may fix it.
 ```
 
-A large AI model is not required for most of this design. AI can be added later as an optional layer for root-cause analysis and incident explanation.
+A large AI model is not required for most of this design.
+
+The first parts can be built with Prometheus, Alertmanager, Loki, Tempo, rules, statistics, and normal automation.
+
+AI can be added later as an optional incident triage and root-cause analysis layer.
