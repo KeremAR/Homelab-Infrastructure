@@ -27,6 +27,14 @@ data:
         target_label  = "container"
       }
       rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        target_label  = "service_name"
+      }
+      rule {
+        target_label = "cluster"
+        replacement  = "homelab"
+      }
+      rule {
         source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_name"]
         separator     = "/"
         target_label  = "job"
@@ -67,6 +75,78 @@ data:
       }
       stage.label_drop {
         values = ["tmp_container_runtime"]
+      }
+
+      // Application services emit one JSON object per stdout line. The JSON
+      // stage is intentionally non-destructive: plain-text logs from other
+      // containers remain available when no JSON fields are found.
+      stage.json {
+        expressions = {
+          timestamp               = "timestamp",
+          severity                = "severity",
+          logger                  = "logger",
+          message                 = "message",
+          service_name            = "service_name",
+          service_namespace       = "service_namespace",
+          service_version         = "service_version",
+          deployment_environment  = "deployment_environment",
+          trace_id                = "trace_id",
+          span_id                 = "span_id",
+          trace_sampled           = "trace_sampled",
+          event_name              = "event_name",
+          actor_id                = "actor_id",
+          resource_type           = "resource_type",
+          resource_id             = "resource_id",
+          outcome                 = "outcome",
+          http_method             = "http_method",
+          http_route              = "http_route",
+          http_status_code        = "http_status_code",
+          duration_ms             = "duration_ms",
+          changed_fields          = "changed_fields",
+          exception_type          = "exception_type",
+          exception_message       = "exception_message",
+          exception               = "exception",
+        }
+      }
+
+      stage.timestamp {
+        source = "timestamp"
+        format = "RFC3339Nano"
+      }
+
+      // Keep only low-cardinality dimensions as indexed labels.
+      stage.labels {
+        values = {
+          severity               = "",
+          logger                 = "",
+          service_name           = "",
+          service_namespace      = "",
+          deployment_environment = "",
+          event_name             = "",
+          outcome                = "",
+          http_method            = "",
+          http_status_code       = "",
+        }
+      }
+
+      // Preserve investigation fields for Elasticsearch without indexing them
+      // as Loki labels. This includes trace and request correlation fields.
+      stage.structured_metadata {
+        values = {
+          service_version   = "",
+          trace_id          = "",
+          span_id           = "",
+          trace_sampled     = "",
+          actor_id          = "",
+          resource_type     = "",
+          resource_id       = "",
+          http_route        = "",
+          duration_ms       = "",
+          changed_fields    = "",
+          exception_type    = "",
+          exception_message = "",
+          exception         = "",
+        }
       }
 
       forward_to = [otelcol.receiver.loki.elasticsearch.receiver]

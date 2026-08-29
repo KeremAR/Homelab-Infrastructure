@@ -58,9 +58,14 @@ database:
 otel:
   endpoint: http://alloy.observability.svc.cluster.local:4318
   protocol: http/protobuf
+  serviceNamespace: homelab-app
+  clusterName: homelab
   tracesExporter: otlp
   metricsExporter: none
   logsExporter: none
+
+pyroscope:
+  endpoint: http://alloy.observability.svc.cluster.local:4040
 
 resources:
   requests:

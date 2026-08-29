@@ -82,13 +82,25 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.name | quote }}
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.namespace }},service.version=latest,deployment.environment={{ .Values.namespace }}"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Values.image.tag }},deployment.environment.name={{ .Values.namespace }},k8s.cluster.name={{ .Values.otel.clusterName }}"
             - name: OTEL_TRACES_EXPORTER
               value: {{ .Values.otel.tracesExporter | quote }}
             - name: OTEL_METRICS_EXPORTER
               value: {{ .Values.otel.metricsExporter | quote }}
             - name: OTEL_LOGS_EXPORTER
               value: {{ .Values.otel.logsExporter | quote }}
+            - name: PYROSCOPE_SERVER_ADDRESS
+              value: {{ .Values.pyroscope.endpoint | quote }}
+            - name: DEPLOYMENT_ENVIRONMENT
+              value: {{ .Values.namespace | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.livenessPath }}

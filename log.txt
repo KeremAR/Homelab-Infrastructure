@@ -1,0 +1,171 @@
+Implement structured, trace-correlated application and audit logging for the
+Homelab App repository. Read the existing code before editing.
+
+Repository context:
+- FastAPI services:
+  - App/user-service
+  - App/todo-service
+- Each service is an independent uv project with pyproject.toml and uv.lock.
+- Legacy requirements.txt and requirements-test.txt must remain usable and
+  aligned with the uv dependencies.
+- Do not restore or introduce Dockerfile.test.
+- Do not modify the legacy SharedLibrary runUnitTest/runPythonLinting helpers.
+- Logs are collected from container stdout by Grafana Alloy and sent to
+  Elasticsearch. Do not introduce application log files.
+- Traces are already exported through OpenTelemetry to Alloy and Jaeger.
+- OTEL_LOGS_EXPORTER must remain "none"; use JSON stdout collection rather than
+  direct OTLP log export.
+
+Implement the following:
+
+1. Python logging foundation
+- Use Python stdlib logging as the logging API.
+- Add python-json-logger and opentelemetry-instrumentation-logging to both
+  service pyproject.toml files.
+- Keep OpenTelemetry package versions compatible with the existing 0.49b2
+  instrumentation set.
+- Update both uv.lock files.
+- Update the legacy requirements.txt files with the same dependencies.
+- Create a service-local logging_config.py in each service because either
+  service may later move to its own repository.
+- Configure root, application, uvicorn, uvicorn.error, and uvicorn.access
+  loggers consistently.
+- Emit one compact JSON object per stdout line.
+- Inject active OpenTelemetry trace context using LoggingInstrumentor with
+  inject_trace_context=True.
+- Use UTC RFC3339 timestamps.
+
+2. Canonical JSON fields
+Produce consistent fields where applicable:
+- timestamp
+- severity
+- logger
+- message
+- service_name
+- service_namespace
+- service_version
+- deployment_environment
+- trace_id
+- span_id
+- trace_sampled
+- event_name
+- actor_id
+- resource_type
+- resource_id
+- outcome
+- http_method
+- http_route
+- http_status_code
+- duration_ms
+- exception information for failures
+
+Outside an active span, trace_id and span_id may be null or omitted. Never emit
+fake trace IDs.
+
+3. Structured request logs
+- Add FastAPI middleware that records request duration with time.perf_counter().
+- Write one structured completion log per API request.
+- Use INFO for successful responses, WARNING for expected 4xx responses, and
+  ERROR/exception logging for unexpected 5xx failures.
+- Avoid duplicate request records. Disable Uvicorn's ordinary access log if the
+  middleware replaces it, while retaining JSON-formatted Uvicorn startup and
+  error logs.
+- Exclude or reduce noise for /health, /ready, and /metrics.
+- Never log request/response bodies, JWTs, Authorization headers, passwords,
+  emails, todo titles, or todo descriptions.
+
+4. Safe audit events
+Add audit logs for state-changing or security-sensitive operations:
+- user.registered
+- auth.login_succeeded
+- auth.login_failed
+- auth.token_rejected
+- todo.created
+- todo.updated
+- todo.deleted
+- admin.users_listed
+- admin.created
+- runtime_config.reloaded
+- runtime_config.reload_failed
+
+Use the authenticated numeric user ID as actor_id. For failed login, do not log
+the submitted username. For todo updates log changed field names only, never
+their values. Reads are covered by request logs and should not all become audit
+events.
+
+Make verify_token place the authenticated user ID into request.state so the
+request completion middleware can include actor_id without decoding the JWT a
+second time.
+
+5. Error handling
+- Log database and startup failures with logger.exception.
+- Do not silently swallow startup database errors without a log.
+- The readiness endpoint must not return raw database exception text to clients;
+  return a generic response and put diagnostic details only in the server log.
+- Preserve all existing API response contracts except removal of sensitive
+  internal error text.
+
+6. OpenTelemetry resources and Helm
+Update Helm rollout templates and values so traces and logs use:
+- service.name=<service name>
+- service.namespace=homelab-app
+- service.version=<actual image tag>
+- deployment.environment.name=staging or production
+- k8s.cluster.name=homelab
+
+Replace the deprecated deployment.environment attribute. Kubernetes pod,
+namespace, and container metadata should primarily be added by Alloy rather
+than repeated manually by every application log.
+
+7. Alloy pipeline
+Update 8_Observability-Stack/logs/alloy-logs-config.yaml:
+- Keep CRI/Docker envelope parsing.
+- Detect and parse JSON application log lines.
+- Preserve plain-text logs from other containers.
+- Add Kubernetes namespace, pod, container, and cluster metadata.
+- Derive service identity from app.kubernetes.io/name where available.
+- Do not promote trace_id, actor_id, resource_id, pod UID, or request path to
+  indexed/high-cardinality Loki-style labels.
+- Preserve these as structured log attributes suitable for Elasticsearch.
+- Validate the exact Grafana Alloy syntax against official documentation.
+
+8. Tests
+Add focused tests proving:
+- Log output is valid JSON.
+- Required service/severity/message fields exist.
+- Active OpenTelemetry spans populate trace_id and span_id.
+- Audit events contain actor/resource/action fields.
+- Passwords, tokens, Authorization values, emails, titles, and descriptions do
+  not appear in logs.
+- Successful and failed login events differ without exposing usernames.
+- Todo create/update/delete audit events use IDs and update field names.
+- Request logs contain status and duration.
+- Existing backend tests continue passing.
+
+Run:
+- uv lock --check for both services
+- Ruff format and lint
+- Both backend pytest suites
+- Helm lint/template checks
+- An Alloy configuration validation if a supported local/container command is
+  available
+
+9. Documentation
+Update App/README.md and 8_Observability-Stack/README.md with:
+- JSON stdout logging flow
+- request logs versus audit logs
+- trace/log correlation
+- fields added by the app versus fields added by Alloy
+- sensitive fields that must never be logged
+- example Kibana searches by service_name, actor_id, event_name, and trace_id
+
+Do not implement Prometheus exemplars blindly. Inspect whether the current
+prometheus-fastapi-instrumentator and Prometheus scrape/remote-write path can
+carry OpenMetrics exemplars. If fully supported, add trace_id exemplars only to
+the request-duration histogram and document Grafana/Jaeger datasource mapping.
+Otherwise document the exact missing capability as a follow-up without
+hand-rolling a fragile metric implementation.
+
+Keep changes scoped to logging, telemetry correlation, related deployment
+configuration, tests, lockfiles, and documentation. At completion, explain the
+old and new log flow and list all verification results.

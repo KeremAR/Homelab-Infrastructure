@@ -16,7 +16,7 @@ controller:
       - name: root
         hostPath:
           path: /
-      # Merge the three signal-specific ConfigMaps into one directory.
+      # Merge the four signal-specific ConfigMaps into one directory.
       # Alloy accepts a directory and loads every *.alloy file in it.
       - name: alloy-signal-configs
         projected:
@@ -36,6 +36,11 @@ controller:
                 items:
                   - key: traces.alloy
                     path: traces.alloy
+            - configMap:
+                name: alloy-profiles-config
+                items:
+                  - key: profiles.alloy
+                    path: profiles.alloy
       - name: elasticsearch-ca
         secret:
           # ECK creates this public CA Secret for the logs-es-http Service.
@@ -82,6 +87,10 @@ alloy:
     - name: otlp-http
       port: 4318
       targetPort: 4318
+      protocol: TCP
+    - name: profiles
+      port: 4040
+      targetPort: 4040
       protocol: TCP
 
 rbac:
