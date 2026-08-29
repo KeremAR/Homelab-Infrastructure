@@ -19,45 +19,59 @@ spec:
   - matches:
     - path:
         type: PathPrefix
-        value: /register
+        value: /api/v1/auth
     backendRefs:
     - name: user-service
       port: 8001
   - matches:
     - path:
         type: PathPrefix
-        value: /login
+        value: /api/v1/users
     backendRefs:
     - name: user-service
       port: 8001
   - matches:
     - path:
         type: PathPrefix
-        value: /users
+        value: /api/v1/admin/users
     backendRefs:
     - name: user-service
       port: 8001
   - matches:
     - path:
         type: PathPrefix
-        value: /todos
+        value: /api/v1/admin/create-admin
+    backendRefs:
+    - name: user-service
+      port: 8001
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/todos
+    backendRefs:
+    - name: todo-service
+      port: 8002
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/admin/todos
+    backendRefs:
+    - name: todo-service
+      port: 8002
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/admin/reload-config
     backendRefs:
     - name: todo-service
       port: 8002
   - matches:
     - path:
         type: Exact
-        value: /config
+        value: /api/v1/config
     backendRefs:
     - name: todo-service
       port: 8002
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /admin
-    backendRefs:
-    - name: user-service
-      port: 8001
   - matches:
     - path:
         type: PathPrefix
