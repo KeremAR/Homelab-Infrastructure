@@ -4,6 +4,7 @@ server:
     existingClaim: prometheus-data
   extraArgs:
     web.enable-remote-write-receiver: ""
+    enable-feature: exemplar-storage
   resources:
     requests:
       cpu: 200m

@@ -38,6 +38,24 @@ datasources:
         url: http://prometheus-server.observability.svc.cluster.local:80
         isDefault: true
         editable: false
+        jsonData:
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: jaeger
+      - name: Jaeger
+        uid: jaeger
+        type: jaeger
+        access: proxy
+        url: http://jaeger.observability.svc.cluster.local:16686
+        editable: false
+      - name: Pyroscope
+        uid: pyroscope
+        type: grafana-pyroscope-datasource
+        access: proxy
+        url: http://pyroscope.observability.svc.cluster.local:4040
+        editable: false
+        jsonData:
+          minStep: 15s
 
 resources:
   requests:
