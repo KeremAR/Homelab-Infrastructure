@@ -31,6 +31,7 @@ http://jenkins.192.168.0.110.nip.io
   jenkins-values.yaml
   jenkins-httproute.yaml
   ci-python-test-runner.Dockerfile
+  ci-python-uv-runner.Dockerfile
   kubernetes-tools.Dockerfile
 ```
 
@@ -268,7 +269,12 @@ jenkins-docker-cache-user-service-pvc
 jenkins-docker-cache-todo-service-pvc
 jenkins-docker-cache-frontend-pvc
 jenkins-venv-cache-pvc
+jenkins-uv-cache-pvc
 ```
+
+`jenkins-venv-cache-pvc` remains for legacy pip-based Shared Library steps.
+Current uv pipelines mount `jenkins-uv-cache-pvc` at `/cache/uv` and persist
+only uv download/build cache data.
 
 ---
 
@@ -317,11 +323,15 @@ Build and push the CI Python runner:
 
 ```bash
 docker build \
-  -f 7-CI-CD-Setup/jenkins/ci-python-test-runner.Dockerfile \
-  -t ghcr.io/keremar/ci-python-test-runner:py3.11-v2 .
+  -f 7-CI-CD-Setup/jenkins/ci-python-uv-runner.Dockerfile \
+  -t ghcr.io/keremar/ci-python-test-runner:py3.11-uv-v1 .
 
-docker push ghcr.io/keremar/ci-python-test-runner:py3.11-v2
+docker push ghcr.io/keremar/ci-python-test-runner:py3.11-uv-v1
 ```
+
+This runner contains Python 3.11, uv 0.12.1, and Ruff 0.16.0. Service test
+dependencies come from each application's committed `uv.lock`; they are not
+baked into the runner image.
 
 Build and push the Kubernetes tools image:
 

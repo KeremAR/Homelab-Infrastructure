@@ -114,3 +114,16 @@ spec:
     requests:
       storage: 1Gi
   storageClassName: longhorn-storageclass
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-uv-cache-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn-storageclass
