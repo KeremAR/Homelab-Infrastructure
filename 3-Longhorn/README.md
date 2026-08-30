@@ -109,9 +109,12 @@ data:
   default-setting.yaml: |-
     create-default-disk-labeled-nodes: true
     default-data-path: /mnt/longhorn-storage/
+    guaranteed-instance-manager-cpu: 5
 ```
 
 `create-default-disk-labeled-nodes` defaults to `false`. When it is left disabled, Longhorn does not use the label as a filter and registers `default-data-path` as a Longhorn disk on every newly detected eligible node. Setting it to `true` makes Longhorn register the default storage path only on nodes labeled `node.longhorn.io/create-default-disk=true`; this keeps Longhorn replica storage on the three workers and off the control-plane node. This behavior is described in the official Longhorn documentation under [Configuring Defaults for Nodes and Disks](https://longhorn.io/docs/1.12.0/nodes-and-volumes/nodes/default-disk-and-node-config/).
+
+`guaranteed-instance-manager-cpu` is the percentage of allocatable CPU reserved by each Longhorn instance-manager pod. The default is `12`; this homelab uses `5` to reduce the CPU request from roughly `240m` to `100m` on a node with about two allocatable CPUs. Lowering it reduces scheduling pressure but leaves less CPU headroom for Longhorn engine and replica operations, so keep the setting at a measured value rather than disabling the reservation.
 
 Here, “create default disk” means registering `/mnt/longhorn-storage/` as a storage location in Longhorn—it does not create a physical disk, partition, or filesystem. The directory and any intended disk mount must already be prepared on every labeled worker.
 
