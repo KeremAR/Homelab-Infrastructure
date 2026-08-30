@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/instance: {{ .Values.instance }}
     app.kubernetes.io/component: {{ .Values.component }}
     app.kubernetes.io/managed-by: {{ .Values.managedBy }}
+    istio.io/use-waypoint: {{ .Values.name }}-waypoint
 {{- with .Values.service.annotations }}
   annotations:
 {{ toYaml . | indent 4 }}

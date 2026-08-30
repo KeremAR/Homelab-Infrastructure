@@ -54,6 +54,17 @@ kubectl rollout status deployment -n envoy-gateway-system \
   --timeout=3m
 ```
 
+The Argo Rollouts controller also calls the application canary Services during
+analysis. Enroll its namespace in ambient mode and recreate the controller Pod
+so Istio CNI can capture those calls before enabling STRICT mTLS analysis:
+
+```bash
+kubectl label namespace argo-rollouts \
+  istio.io/dataplane-mode=ambient --overwrite
+kubectl rollout restart deployment/argo-rollouts -n argo-rollouts
+kubectl rollout status deployment/argo-rollouts -n argo-rollouts --timeout=3m
+```
+
 Create one waypoint per selected Service and attach all four Services:
 
 ```bash
@@ -64,6 +75,10 @@ for namespace in staging production; do
       --name "${service}-waypoint" \
       --for service
     kubectl label service "$service" \
+      --namespace "$namespace" \
+      istio.io/use-waypoint="${service}-waypoint" \
+      --overwrite
+    kubectl label service "${service}-canary" \
       --namespace "$namespace" \
       istio.io/use-waypoint="${service}-waypoint" \
       --overwrite
