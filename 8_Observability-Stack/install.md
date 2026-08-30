@@ -1,8 +1,9 @@
 # Observability Stack Installation
 
 This stack uses Prometheus for metrics, Elasticsearch and Kibana for logs,
-Jaeger for traces, Grafana for metric dashboards, and Grafana Alloy as the
-collection agent. Run all commands from the repository root.
+Jaeger for traces, Pyroscope for profiles, Grafana for visualization, and
+Grafana Alloy as the collection agent. Run all commands from the repository
+root.
 
 ## Prerequisites
 
@@ -126,13 +127,14 @@ helm repo update
 
 ## 2. Create the namespace, storage, and Secrets
 
-Prometheus and Grafana use explicitly created PVCs. ECK creates
+Prometheus, Pyroscope and Grafana use explicitly created PVCs. ECK creates
 Elasticsearch's StatefulSet PVC from the `volumeClaimTemplates` in
 `logs/elasticsearch.yaml`.
 
 ```bash
 kubectl apply -f 8_Observability-Stack/namespace.yaml
 kubectl apply -f 8_Observability-Stack/metrics/prometheus-pvc.yaml
+kubectl apply -f 8_Observability-Stack/profiling/pyroscope-pvc.yaml
 kubectl apply -f 8_Observability-Stack/grafana-pvc.yaml
 ```
 
@@ -265,12 +267,33 @@ kubectl apply -f 8_Observability-Stack/traces/jaeger-httproute.yaml
 
 Jaeger: <http://jaeger.192.168.0.110.nip.io>
 
-## 6. Install Grafana Alloy
+## 6. Install Pyroscope
+
+Pyroscope runs as a single binary and stores profiles on the pre-created 2 Gi
+Longhorn claim. The chart's bundled Alloy is disabled because this stack uses
+the existing Alloy DaemonSet.
+
+```bash
+helm upgrade --install pyroscope grafana/pyroscope \
+  --version 2.2.1 \
+  --namespace observability \
+  --values 8_Observability-Stack/profiling/pyroscope-values.yaml \
+  --wait
+
+kubectl apply -f 8_Observability-Stack/profiling/pyroscope-httproute.yaml
+```
+
+Pyroscope: <http://pyroscope.192.168.0.110.nip.io>
+
+The SDK and Alloy integration are described in
+[`profiling/README.md`](profiling/README.md).
+
+## 7. Install Grafana Alloy
 
 Alloy runs once per node and sends metrics to Prometheus, logs to Elasticsearch,
-and traces to Jaeger. Its configuration is kept in three signal-specific
-ConfigMaps. Kubernetes projects them into one directory, which Alloy loads as
-a single configuration.
+traces to Jaeger, and profiles to Pyroscope. Its configuration is kept in four
+signal-specific ConfigMaps. Kubernetes projects them into one directory, which
+Alloy loads as a single configuration.
 
 The log collector still uses `loki.source.file` and `loki.process`. These are
 local Alloy pipeline components, not a Loki server. `otelcol.receiver.loki`
@@ -289,6 +312,7 @@ kubectl apply -f 8_Observability-Stack/alloy-bootstrap-config.yaml
 kubectl apply -f 8_Observability-Stack/metrics/alloy-metrics-config.yaml
 kubectl apply -f 8_Observability-Stack/logs/alloy-logs-config.yaml
 kubectl apply -f 8_Observability-Stack/traces/alloy-traces-config.yaml
+kubectl apply -f 8_Observability-Stack/profiling/alloy-profiles-config.yaml
 
 helm upgrade --install alloy grafana/alloy \
   --namespace observability \
@@ -307,6 +331,7 @@ and restart Alloy:
 kubectl apply -f 8_Observability-Stack/metrics/alloy-metrics-config.yaml
 kubectl apply -f 8_Observability-Stack/logs/alloy-logs-config.yaml
 kubectl apply -f 8_Observability-Stack/traces/alloy-traces-config.yaml
+kubectl apply -f 8_Observability-Stack/profiling/alloy-profiles-config.yaml
 kubectl rollout restart daemonset/alloy -n observability
 kubectl rollout status daemonset/alloy -n observability
 ```
@@ -324,9 +349,13 @@ Applications can send OTLP data to:
 ```text
 http://alloy.observability.svc.cluster.local:4318
 alloy.observability.svc.cluster.local:4317
+http://alloy.observability.svc.cluster.local:4040
 ```
 
-## 7. Install Grafana
+Ports `4317` and `4318` receive OTLP traces; port `4040` receives Pyroscope
+SDK profiles.
+
+## 8. Install Grafana
 
 The Prometheus datasource UID is fixed, so dashboard manifests do not need a
 script to discover a generated UID. Logs are explored in Kibana Discover.
@@ -346,7 +375,7 @@ kubectl apply -f 8_Observability-Stack/grafana-httproute.yaml
 
 Grafana: <http://grafana.192.168.0.110.nip.io>
 
-## 8. Install the dashboards
+## 9. Install the dashboards
 
 ```bash
 kubectl apply -f 8_Observability-Stack/dashboards/dashboard-memory-analysis.yaml
@@ -371,7 +400,7 @@ Server-side apply is used because client-side apply stores the complete
 ConfigMap in the `last-applied-configuration` annotation. The larger official
 dashboard bundles would exceed Kubernetes' 256 KiB annotation limit.
 
-## 9. Verify the installation
+## 10. Verify the installation
 
 ```bash
 kubectl get pods,pvc -n observability
@@ -379,12 +408,12 @@ kubectl get httproute -n observability
 kubectl logs -n observability daemonset/alloy --tail=100
 ```
 
-Every node should have one Alloy pod. All PVCs should be `Bound`, and all five
+Every node should have one Alloy pod. All PVCs should be `Bound`, and all six
 HTTPRoutes should be accepted by the shared Gateway. Generate a new application
 log, then confirm that a `logs-*` data stream and its fields appear in Kibana
 Discover.
 
-## 10. Remove an existing Loki deployment
+## 11. Remove an existing Loki deployment
 
 For a migration, keep Loki running until new logs are visible in Kibana. The
 following commands permanently remove the old Loki release and its stored log

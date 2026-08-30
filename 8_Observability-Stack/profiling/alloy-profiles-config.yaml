@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-profiles-config
+  namespace: observability
+data:
+  profiles.alloy: |
+    // Receive profiles from language SDKs and forward them to Pyroscope.
+    pyroscope.write "default" {
+      endpoint {
+        url = "http://pyroscope.observability.svc.cluster.local:4040"
+      }
+    }
+
+    pyroscope.receive_http "default" {
+      http {
+        listen_address = "0.0.0.0"
+        listen_port    = 4040
+      }
+
+      forward_to = [pyroscope.write.default.receiver]
+    }

@@ -1,0 +1,25 @@
+# A single-binary deployment is sufficient for this small homelab.
+architecture:
+  storage:
+    v1: false
+    v2: true
+  microservices:
+    enabled: false
+
+# Reuse the cluster's existing Alloy DaemonSet instead of installing the
+# additional Alloy instance bundled with the Pyroscope chart.
+alloy:
+  enabled: false
+
+pyroscope:
+  replicaCount: 1
+  persistence:
+    enabled: true
+    existingClaim: pyroscope-data
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pyroscope-data
+  namespace: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-storageclass
+  resources:
+    requests:
+      storage: 2Gi
