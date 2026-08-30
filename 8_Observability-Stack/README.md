@@ -245,24 +245,87 @@ Plain-text logs from other containers are preserved without being discarded.
 
 #### Application JSON Logs And Correlation
 
-The User and Todo services emit compact JSON to stdout. The container runtime
-adds the CRI/Docker envelope, which Alloy removes before parsing the JSON. This
-keeps application logging independent from Elasticsearch and works with the
-same collector for both structured and legacy plain-text container logs.
+**Log source and path:**
 
-The application formatter emits UTC timestamps, severity, logger, service
-identity, deployment environment, event name, outcome, HTTP method/route/
-status/duration, actor/resource fields when applicable, exception details for
-server-side failures, and OpenTelemetry trace/span correlation fields. Helm
-sets the service name, `service.namespace`, image-tag version,
-`deployment.environment.name`, and `k8s.cluster.name` through
-`OTEL_RESOURCE_ATTRIBUTES`.
+| Item | Value |
+|---|---|
+| Producers | `user-service`, `todo-service` |
+| Application output | One JSON object per stdout line |
+| Container envelope | CRI or Docker format; removed by Alloy before JSON parsing |
+| Collector | Grafana Alloy DaemonSet |
+| Destination | Elasticsearch over OTLP/HTTP |
+| UI | Kibana Discover |
 
-Alloy promotes only low-cardinality fields such as severity, logger,
-`service_name`, event name, outcome, HTTP method, and status to labels. Trace
-IDs, actor/resource IDs, request paths, durations, changed fields, exception
-text, and pod UID remain structured metadata to avoid high-cardinality index
-growth. Kibana can still query them as fields, for example:
+**Collection flow:**
+
+```text
+FastAPI application
+    ↓ JsonLogFormatter
+JSON record on stdout
+    ↓ container runtime envelope
+Alloy: CRI/Docker parse → JSON parse → labels/structured metadata
+    ↓ OTLP/HTTP
+Elasticsearch
+    ↓
+Kibana Discover
+```
+
+**JSON record fields:**
+
+- **Formatter source:** `user-service/logging_config.py` and
+  `todo-service/logging_config.py`
+- **Optional fields:** Fields that are not relevant to an event are omitted or
+  set to `null`.
+
+| Field | Meaning | Example |
+|---|---|---|
+| `timestamp` | UTC event time | `2026-08-29T14:37:27.412Z` |
+| `severity` | Log level | `INFO`, `ERROR` |
+| `logger` | Python logger name | `app` |
+| `message` | Human-readable message after redaction | `HTTP request completed` |
+| `service_name` | Application service | `user-service` |
+| `service_namespace` | Logical service namespace | `homelab-app` |
+| `service_version` | Image or runtime version | `dev`, `1f1170f-v1.0-staging` |
+| `deployment_environment` | Deployment environment | `development`, `staging` |
+| `event_name` | Stable audit/request event name | `auth.login_failed` |
+| `outcome` | Event result | `success`, `failure` |
+| `http_method` | HTTP method | `GET`, `POST` |
+| `http_route` | FastAPI route template | `/api/v1/todos` |
+| `http_status_code` | HTTP response status | `200`, `401` |
+| `duration_ms` | Server-side request duration | `34.07` |
+| `actor_id` | Authenticated user ID, when applicable | `7` |
+| `resource_type` / `resource_id` | Affected resource identity | `todo` / `42` |
+| `changed_fields` | Fields changed by an update | `["completed"]` |
+| `trace_id` / `span_id` | OpenTelemetry correlation IDs | `99b077...` |
+| `trace_sampled` | Whether the trace was sampled | `true` |
+| `exception_*` | Exception type, message, and stack trace | `ValueError` |
+
+**Application logging rules:**
+
+- `JsonLogFormatter` adds service identity, environment, request context, and
+  trace correlation to every application record.
+- The request middleware emits completion events with route, status, and
+  duration fields.
+- Authentication, todo mutations, administrative actions, and runtime config
+  reloads use stable `event_name` values.
+- Request bodies, JWTs, passwords, token values, email addresses, and todo
+  content are redacted or intentionally excluded.
+
+**Alloy field mapping:**
+
+Alloy keeps frequently filtered, low-cardinality fields as labels and keeps
+high-cardinality investigation fields as structured metadata.
+
+| Mapping | Fields |
+|---|---|
+| Labels | `severity`, `logger`, `service_name`, `service_namespace`, `deployment_environment`, `event_name`, `outcome`, `http_method`, `http_status_code` |
+| Structured metadata | `service_version`, `trace_id`, `span_id`, `trace_sampled`, `actor_id`, `resource_type`, `resource_id`, `http_route`, `duration_ms`, `changed_fields`, `exception_*` |
+| Kubernetes labels | `namespace`, `pod`, `container`, `cluster`, `job` |
+
+**Cardinality rule:** Trace IDs, actor IDs, request paths, and exception text
+remain available for investigation without becoming unbounded labels.
+
+**Kibana Discover examples:**
 
 ```text
 service_name: "user-service" AND event_name: "auth.login_failed"
@@ -270,11 +333,6 @@ service_name: "todo-service" AND event_name: "todo.updated"
 actor_id: 7 AND event_name: "todo.deleted"
 trace_id: "<trace-id>"
 ```
-
-The services intentionally never log request bodies, JWTs, passwords, token
-values, email addresses, or todo content. Authentication, todo mutations,
-administrative actions, runtime reloads, and request completion are represented
-by named audit/request events instead.
 
 #### Traces Collection (OTLP Receiver)
 
@@ -422,9 +480,7 @@ probes do not inflate the request counter or latency histogram.
 Prometheus must run with `exemplar-storage` enabled. Grafana needs a Jaeger
 datasource and a Prometheus datasource mapping from exemplar field `trace_id`
 to the Jaeger datasource UID. The local Dev Container stack exercises this
-application-to-Prometheus-to-Grafana/Jaeger path directly. The Kubernetes path
-still requires a smoke test to confirm that Alloy preserves exemplars while
-forwarding metrics with remote write.
+application-to-Prometheus-to-Grafana/Jaeger path directly.
 
 **Why Custom Buckets?**
 Prometheus Histograms count requests in specific "buckets" (e.g., "requests faster than 0.1s").
