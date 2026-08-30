@@ -339,6 +339,54 @@ spec:
 
 The node-specific worker template pattern above is taken from [`cluster3.yaml`](../cluster3.yaml). When templates live on local storage, also ensure each machine template has the correct `sourceNode` and that node's `templateID`.
 
+### Protect the control-plane from memory exhaustion
+
+The API server has a `2Gi` memory limit. This is a guardrail, not extra
+capacity. If the process reaches the limit, kubelet kills and restarts the API
+server; the kube-vip address can briefly disappear while the API server and
+its leader lease recover. Size the control-plane VM according to the workload
+installed on the cluster and leave sufficient headroom.
+
+For a new cluster, add this file to
+`KubeadmControlPlane.spec.kubeadmConfigSpec.files` before applying
+`cluster.yaml`. The `patches.directory` setting already exists in this
+configuration, so kubeadm applies it while generating the static Pod:
+
+```yaml
+- content: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: kube-apiserver
+      namespace: kube-system
+    spec:
+      containers:
+      - name: kube-apiserver
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1500m
+            memory: 2Gi
+  owner: root:root
+  path: /etc/kubernetes/patches/kube-apiserver0+strategic.yaml
+  permissions: "0644"
+```
+
+The filename follows kubeadm's static Pod patch convention: the target is
+`kube-apiserver`, `strategic` selects the patch type, and the numeric suffix
+controls patch order. Kubeadm writes the resulting static Pod to
+`/etc/kubernetes/manifests`; kubelet watches that directory and restarts the
+API server when the manifest changes. See the official
+[kubeadm patch documentation](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init-phase/).
+
+For an existing control-plane, update
+`/etc/kubernetes/manifests/kube-apiserver.yaml` during a maintenance window
+after backing it up. Keep the same `resources` block shown above. Do not edit
+the generated file only in the repository and expect an existing VM to change;
+the file on the node is what kubelet is currently running.
+
 ### Disable kube-proxy when Cilium is the selected CNI
 
 Before `kubectl apply`, edit the generated `KubeadmControlPlane` only when the

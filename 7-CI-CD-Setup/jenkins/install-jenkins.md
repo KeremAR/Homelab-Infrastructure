@@ -276,6 +276,21 @@ jenkins-uv-cache-pvc
 Current uv pipelines mount `jenkins-uv-cache-pvc` at `/cache/uv` and persist
 only uv download/build cache data.
 
+The shared dependency and tool caches are created as `ReadWriteMany` so multiple
+service CI agents can mount them concurrently:
+
+```text
+jenkins-tools-cache-pvc
+jenkins-npm-cache-pvc
+jenkins-trivy-cache-pvc
+jenkins-sonar-cache-pvc
+jenkins-uv-cache-pvc
+```
+
+The Jenkins home and legacy venv cache remain `ReadWriteOnce`. The three
+service-specific Docker cache PVCs remain `ReadWriteOncePod` because two Docker
+daemons must never share the same `/var/lib/docker` directory.
+
 ---
 
 ## 11. Create Secrets From `.env`

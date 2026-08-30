@@ -295,6 +295,13 @@ traces to Jaeger, and profiles to Pyroscope. Its configuration is kept in four
 signal-specific ConfigMaps. Kubernetes projects them into one directory, which
 Alloy loads as a single configuration.
 
+The Alloy values file sets `100m` CPU / `256Mi` memory requests and `500m` CPU /
+`600Mi` memory limits. This prevents one collector from consuming the
+control-plane VM's remaining resources. CPU above `500m` is throttled; memory
+above `600Mi` causes the container to be OOM-killed and restarted by the
+DaemonSet. Check restart counts and reduce collection volume or increase the
+limits only after confirming the node has capacity.
+
 The log collector still uses `loki.source.file` and `loki.process`. These are
 local Alloy pipeline components, not a Loki server. `otelcol.receiver.loki`
 converts their output to OpenTelemetry logs, and `otelcol.exporter.otlphttp`
@@ -318,6 +325,8 @@ helm upgrade --install alloy grafana/alloy \
   --namespace observability \
   --values 8_Observability-Stack/alloy-values.yaml \
   --wait
+
+kubectl rollout status daemonset/alloy -n observability
 
 # Allow EnvoyProxy in envoy-gateway to reference Alloy across namespaces.
 kubectl apply -f '2-Gateway-API-and-MetalLB/envoy-gateway/alloy-referencegrant.yaml'

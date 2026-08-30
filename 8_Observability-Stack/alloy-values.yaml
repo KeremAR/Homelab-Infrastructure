@@ -47,6 +47,15 @@ controller:
           secretName: logs-es-http-certs-public
 
 alloy:
+  # Keep a runaway collector from consuming the control-plane node.
+  # A container that reaches 600Mi is restarted by Kubernetes.
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "600Mi"
   configMap:
     create: false
     # The chart requires one primary ConfigMap. Its key points the fixed

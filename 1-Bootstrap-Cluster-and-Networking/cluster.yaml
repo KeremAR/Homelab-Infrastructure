@@ -141,6 +141,25 @@ spec:
       owner: root:root
       path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
       permissions: "0644"
+    - content: |
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: kube-apiserver
+          namespace: kube-system
+        spec:
+          containers:
+          - name: kube-apiserver
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                cpu: 1500m
+                memory: 2Gi
+      owner: root:root
+      path: /etc/kubernetes/patches/kube-apiserver0+strategic.yaml
+      permissions: "0644"
     initConfiguration:
       patches:
         directory: /etc/kubernetes/patches
