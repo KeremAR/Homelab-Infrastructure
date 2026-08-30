@@ -65,6 +65,17 @@ kubectl rollout restart deployment/argo-rollouts -n argo-rollouts
 kubectl rollout status deployment/argo-rollouts -n argo-rollouts --timeout=3m
 ```
 
+These labels must also exist in the Git-managed manifests. The `kubectl label`
+commands above repair the live cluster, but ArgoCD can overwrite an out-of-sync
+resource during reconciliation. Keep the following declarations in the
+manifests used by this deployment:
+
+- `argo-rollouts` Namespace: `istio.io/dataplane-mode: ambient`
+- Backend stable and canary Services: `istio.io/use-waypoint: <service>-waypoint`
+
+The Helm Service templates and the Argo Rollouts namespace manifest contain
+these declarations. Commit and push them before the next ArgoCD sync.
+
 Create one waypoint per selected Service and attach all four Services:
 
 ```bash

@@ -116,6 +116,12 @@ data:
 
 `guaranteed-instance-manager-cpu` is the percentage of allocatable CPU reserved by each Longhorn instance-manager pod. The default is `12`; this homelab uses `5` to reduce the CPU request from roughly `240m` to `100m` on a node with about two allocatable CPUs. Lowering it reduces scheduling pressure but leaves less CPU headroom for Longhorn engine and replica operations, so keep the setting at a measured value rather than disabling the reservation.
 
+On an existing cluster, changing this setting does not rewrite the resource
+request of already-running instance-manager Pods. Recreate them one at a time,
+wait for each replacement to become `Ready`, and verify the volume state before
+moving to the next node. Volumes using a single replica can experience a short
+interruption while their node's instance-manager is restarted.
+
 Here, “create default disk” means registering `/mnt/longhorn-storage/` as a storage location in Longhorn—it does not create a physical disk, partition, or filesystem. The directory and any intended disk mount must already be prepared on every labeled worker.
 
 > **Replica-count scope:** Longhorn's `default-replica-count` setting is used
