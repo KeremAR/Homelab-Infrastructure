@@ -19,6 +19,7 @@ controller:
     - kubernetes
     - kubernetes-cli
     - workflow-aggregator
+    - pipeline-model-definition
     - pipeline-stage-view
     - basic-branch-build-strategies
     - timestamper
@@ -33,7 +34,10 @@ controller:
     - copyartifact
     - list-git-branches-parameter
     - build-user-vars-plugin
+  # Keep normal controller restarts fast and predictable. Use the one-time
+  # upgrade command in the Jenkins README when plugin versions are stale.
   installLatestPlugins: false
+  overwritePlugins: false
 
   containerEnv:
     - name: GITHUB_USERNAME

@@ -448,6 +448,11 @@ workflow-aggregator
 pipeline-stage-view
   Provides Pipeline support and stage visualization.
 
+pipeline-model-definition
+  Provides Declarative Pipeline syntax such as `pipeline {}` and `stages {}`.
+  It is listed explicitly because the application pipelines use Declarative
+  Pipeline syntax.
+
 basic-branch-build-strategies
   Adds branch and PR build strategy controls for Multibranch jobs.
 
@@ -485,6 +490,35 @@ list-git-branches-parameter
 build-user-vars-plugin
   Adds build-user environment variables for release build descriptions.
 ```
+
+### Plugin Upgrade Policy
+
+The values file keeps plugin updates disabled during normal restarts:
+
+```yaml
+controller:
+  installLatestPlugins: false
+  overwritePlugins: false
+```
+
+This avoids slow, unplanned plugin downloads. After upgrading the Jenkins core
+image, inspect the controller log for failed plugin dependencies. If the
+persistent Jenkins PVC contains incompatible plugin versions, perform one
+controlled refresh:
+
+```bash
+helm upgrade --install jenkins jenkins/jenkins \
+  --namespace jenkins \
+  --values 7-CI-CD-Setup/jenkins/jenkins-values.yaml \
+  --set controller.installLatestPlugins=true \
+  --set controller.overwritePlugins=true \
+  --timeout 10m \
+  --wait
+```
+
+After Jenkins becomes ready and the plugins load successfully, run the normal
+upgrade once more without the two `--set` overrides. This stores the stable
+`false` values in the Helm release for future restarts.
 
 ---
 
