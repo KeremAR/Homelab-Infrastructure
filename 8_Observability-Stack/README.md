@@ -3,8 +3,8 @@
 > The declarative YAML files and [install.md](install.md) are the current
 > installation method.
 
-Complete observability stack for Kubernetes implementing the three pillars of
-observability: **Metrics**, **Logs**, and **Traces**.
+Complete observability stack for Kubernetes covering four telemetry signals:
+**Metrics**, **Logs**, **Traces**, and **Profiles**.
 
 ## 📊 Architecture Overview
 
@@ -35,16 +35,20 @@ The observability stack is built around **Grafana Alloy** as a unified collectio
 │  │  │  Traces Collection:                                    │  │  │
 │  │  │  • OTLP Receiver (gRPC :4317, HTTP :4318)              │  │  │
 │  │  │  └─> Forward → Jaeger                                  │  │  │
+│  │  │                                                        │  │  │
+│  │  │  Profiles Collection:                                  │  │  │
+│  │  │  • Pyroscope HTTP Receiver (:4040)                     │  │  │
+│  │  │  └─> Forward → Pyroscope                               │  │  │
 │  │  └────────────────────────────────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                    │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐               │
-│  │ Prometheus  │   │Elasticsearch│   │   Jaeger    │               │
-│  │  (Metrics)  │   │   (Logs)    │   │  (Traces)   │               │
-│  └─────────────┘   └─────────────┘   └─────────────┘               │
+│  ┌─────────────┐ ┌─────────────┐ ┌──────────┐ ┌───────────┐        │
+│  │ Prometheus  │ │Elasticsearch│ │  Jaeger  │ │ Pyroscope │        │
+│  │  (Metrics)  │ │   (Logs)    │ │ (Traces) │ │(Profiles) │        │
+│  └─────────────┘ └─────────────┘ └──────────┘ └───────────┘        │
 │         ↓                  ↓                  ↓                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │        Grafana (metrics) + Kibana Discover (logs)            │  │
+│  │ Grafana (metrics/profiles) + Kibana (logs) + Jaeger (traces) │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -53,13 +57,14 @@ The observability stack is built around **Grafana Alloy** as a unified collectio
 
 Use [install.md](install.md) for the complete installation order. Component
 configuration is stored as declarative YAML under `metrics/`, `logs/`,
-`traces/`, and `dashboards/`.
+`traces/`, `profiling/`, and `dashboards/`.
 
 Alloy configuration is separated by signal:
 
 - `metrics/alloy-metrics-config.yaml`
 - `logs/alloy-logs-config.yaml`
 - `traces/alloy-traces-config.yaml`
+- `profiling/alloy-profiles-config.yaml`
 
 Dashboard descriptions are maintained separately in
 [README-Dashboards.md](README-Dashboards.md).
@@ -72,6 +77,7 @@ Dashboard descriptions are maintained separately in
 
 **Configuration Highlights:**
 - **Remote Write Receiver**: Enabled to accept metrics from Alloy agents
+- **Exemplar Storage**: Enabled so metric samples can retain trace IDs
 - **Persistent Storage**: Explicitly created 2 Gi Longhorn PVC
 - **Minimal Scraping**: Only self-monitors (Alloy handles all collection)
 
@@ -85,6 +91,7 @@ Dashboard descriptions are maintained separately in
 server:
   extraArgs:
     web.enable-remote-write-receiver: ""  # CRITICAL for Alloy
+    enable-feature: exemplar-storage       # Keep trace exemplars
 ```
 
 ### 2. Elasticsearch and Kibana (Logs)
@@ -103,7 +110,7 @@ server:
 **Why DaemonSet?**
 - **Metrics**: Access to node's `/proc`, `/sys`, `/root` filesystems
 - **Logs**: Access to node's `/var/log/pods` directory
-- **Traces**: Distributed receivers across nodes for resilience
+- **Traces and profiles**: Distributed receivers across nodes for resilience
 
 **Host Mounts:**
 ```yaml
@@ -118,16 +125,19 @@ volumes:
 
 #### Collection Models at a Glance
 
-The three signals reach Alloy in different ways:
+The four signals reach Alloy in different ways:
 
 ```text
 Metrics  → The application exposes /metrics; Alloy periodically pulls it.
 Logs     → The container runtime writes log files; Alloy tails and sends them to Elasticsearch.
 Traces   → Application instrumentation creates spans and pushes them to Alloy over OTLP.
+Profiles → The Pyroscope SDK samples running code and pushes profiles to Alloy over HTTP.
 ```
 
 Alloy collects and forwards telemetry, but it cannot invent application-level
 metrics or traces that the application has never produced.
+The same is true for code-level profiles: Alloy receives and forwards them,
+while the language SDK performs the actual in-process sampling.
 
 #### Metrics Collection (12 Sources)
 
@@ -224,12 +234,47 @@ template:
 - `namespace`: Kubernetes namespace
 - `pod`: Pod name
 - `container`: Container name
+- `cluster`: Kubernetes cluster name (`homelab`)
+- `service_name`: Application service name when the pod label is present
 - `stream`: stdout or stderr
 - `job`: namespace/pod
 
 These Kubernetes fields are filterable in Kibana Discover. Fields that exist
-only inside an application's plain-text message, such as HTTP status or request
-path, require structured JSON application logs or an additional parsing stage.
+inside application JSON are parsed by Alloy and retained as structured fields.
+Plain-text logs from other containers are preserved without being discarded.
+
+#### Application JSON Logs And Correlation
+
+The User and Todo services emit compact JSON to stdout. The container runtime
+adds the CRI/Docker envelope, which Alloy removes before parsing the JSON. This
+keeps application logging independent from Elasticsearch and works with the
+same collector for both structured and legacy plain-text container logs.
+
+The application formatter emits UTC timestamps, severity, logger, service
+identity, deployment environment, event name, outcome, HTTP method/route/
+status/duration, actor/resource fields when applicable, exception details for
+server-side failures, and OpenTelemetry trace/span correlation fields. Helm
+sets the service name, `service.namespace`, image-tag version,
+`deployment.environment.name`, and `k8s.cluster.name` through
+`OTEL_RESOURCE_ATTRIBUTES`.
+
+Alloy promotes only low-cardinality fields such as severity, logger,
+`service_name`, event name, outcome, HTTP method, and status to labels. Trace
+IDs, actor/resource IDs, request paths, durations, changed fields, exception
+text, and pod UID remain structured metadata to avoid high-cardinality index
+growth. Kibana can still query them as fields, for example:
+
+```text
+service_name: "user-service" AND event_name: "auth.login_failed"
+service_name: "todo-service" AND event_name: "todo.updated"
+actor_id: 7 AND event_name: "todo.deleted"
+trace_id: "<trace-id>"
+```
+
+The services intentionally never log request bodies, JWTs, passwords, token
+values, email addresses, or todo content. Authentication, todo mutations,
+administrative actions, runtime reloads, and request completion are represented
+by named audit/request events instead.
 
 #### Traces Collection (OTLP Receiver)
 
@@ -280,7 +325,7 @@ opentelemetry-api==1.28.2
 opentelemetry-sdk==1.28.2
 opentelemetry-exporter-otlp==1.28.2
 opentelemetry-instrumentation-fastapi==0.49b2
-opentelemetry-instrumentation-psycopg2==0.49b2
+opentelemetry-instrumentation-psycopg==0.49b2
 
 # app.py
 import os
@@ -290,7 +335,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
 
 # Configure SDK (reads OTEL_* env vars automatically)
 resource = Resource.create({
@@ -302,60 +347,84 @@ span_processor = BatchSpanProcessor(otlp_exporter)
 trace.get_tracer_provider().add_span_processor(span_processor)
 
 # Instrument libraries BEFORE app initialization
-Psycopg2Instrumentor().instrument()
+PsycopgInstrumentor().instrument()
 
 app = FastAPI()
-FastAPIInstrumentor.instrument_app(app)
+FastAPIInstrumentor.instrument_app(
+    app,
+    excluded_urls=r"/health$,/ready$,/metrics$",
+)
 ```
 
 **Critical Configuration Notes:**
 1. **SDK Setup Required**: Auto-instrumentation alone won't export traces without TracerProvider + Exporter
-2. **Instrumentation Order**: Call `Psycopg2Instrumentor().instrument()` BEFORE creating database connections
+2. **Instrumentation Order**: Call `PsycopgInstrumentor().instrument()` BEFORE creating database connections
 3. **Environment Variables**: OpenTelemetry SDK reads `OTEL_*` variables automatically (no code changes needed)
+4. **OTLP Endpoint**: Set `OTEL_EXPORTER_OTLP_ENDPOINT` to the receiver base URL, such as `http://alloy.observability.svc.cluster.local:4318`. With HTTP/protobuf, `OTLPSpanExporter()` resolves this as `...:4318/v1/traces`. A signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used exactly as provided, so that value must already include `/v1/traces`.
+5. **Probe Noise**: Exclude successful health, readiness, and metrics traffic from application traces and metrics; failed probe responses remain visible in logs and application metrics.
 
 ### Prometheus Metrics (Python)
 
 To expose detailed **Backend Application Latency** (processing time within FastAPI, excluding network/proxy overhead) with custom buckets:
 
 ```python
-from prometheus_fastapi_instrumentator import Instrumentator, metrics
+from prometheus_client import Counter, Histogram
+from prometheus_client.openmetrics.exposition import generate_latest
 
-# CRITICAL: .add() OVERRIDES default metrics!
-# Must explicitly add both requests() and latency() when using custom buckets
-Instrumentator().add(
-    metrics.requests()  # Request counter (http_requests_total)
-).add(
-    metrics.latency(        buckets=[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0]
-)  # Latency histogram with custom buckets
-).instrument(app).expose(app)
+request_count = Counter(
+    "http_requests_total",
+    "Total number of HTTP requests",
+    ("method", "status", "handler"),
+)
+request_duration = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration",
+    ("method", "status", "handler"),
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0],
+)
 
-#  ALTERNATIVE: Use defaults (no custom buckets)
-Instrumentator().instrument(app).expose(app)
-# Result: All default metrics with default buckets
+# On a sampled request, observe(..., exemplar={"trace_id": ...}).
+# /metrics returns generate_latest(REGISTRY) with the OpenMetrics content type.
 ```
 
-`instrument(app)` installs middleware that observes when each FastAPI request
-starts and finishes. `expose(app)` adds the normal HTTP `/metrics` endpoint.
-The Python process keeps the metric counters and histogram buckets in memory
-and publishes their current values as Prometheus text format through that
-endpoint; `/metrics` is not a hidden page and should normally remain reachable
-only from the intended monitoring network.
+The application middleware observes each non-probe request while the active
+FastAPI OpenTelemetry span is available. It increments the request counter and
+records latency. For sampled spans, the histogram observation carries the
+32-character `trace_id` as an exemplar. The Python process keeps these values
+in memory and exposes them through `/metrics`; `/metrics` is not a hidden page
+and should normally remain reachable only from the intended monitoring network.
 
 The complete application-metrics flow is:
 
 ```text
-FastAPI Instrumentator
-    ↓ records counters and request durations in process memory
+Python service custom Prometheus instrumentation
+    ↓ records counters and exemplar-capable request durations in process memory
 Pod IP:<annotated-port>/metrics
-    ↓ Alloy discovers the annotated pod and periodically performs HTTP GET
+    ↓ Alloy discovers the annotated pod and performs an OpenMetrics HTTP GET
 Grafana Alloy
-    ↓ Prometheus remote_write
+    ↓ Prometheus remote_write, including exemplars
 Prometheus
 ```
 
 The port in `prometheus.io/port` must match the port on which the application
 exposes `/metrics`; `8080` in this document is an example rather than a fixed
 requirement.
+
+#### Trace Exemplars
+
+The Python services use a custom `prometheus_client` histogram and expose
+`/metrics` using the official OpenMetrics exposition API. A sampled active
+OpenTelemetry span contributes its 32-character `trace_id` as an exemplar to a
+latency bucket; it is not a regular metric label. `/health`, `/ready`, and
+`/metrics` requests are excluded from application request metrics, so successful
+probes do not inflate the request counter or latency histogram.
+
+Prometheus must run with `exemplar-storage` enabled. Grafana needs a Jaeger
+datasource and a Prometheus datasource mapping from exemplar field `trace_id`
+to the Jaeger datasource UID. The local Dev Container stack exercises this
+application-to-Prometheus-to-Grafana/Jaeger path directly. The Kubernetes path
+still requires a smoke test to confirm that Alloy preserves exemplars while
+forwarding metrics with remote write.
 
 **Why Custom Buckets?**
 Prometheus Histograms count requests in specific "buckets" (e.g., "requests faster than 0.1s").
@@ -409,13 +478,31 @@ Python App (OTel SDK) → Alloy (OTLP) → Jaeger Collector → Jaeger UI
 ```python
 # Library instrumentation (automatic spans)
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
 
-Psycopg2Instrumentor().instrument()  # Before app init
-FastAPIInstrumentor.instrument_app(app)
+PsycopgInstrumentor().instrument()  # Before app init
+FastAPIInstrumentor.instrument_app(
+    app,
+    excluded_urls=r"/health$,/ready$,/metrics$",
+)
 ```
 
-### 6. Blackbox Exporter (In-Cluster Service Monitoring)
+### 6. Pyroscope (Continuous Profiling)
+
+The Python SDK samples the backend processes and sends CPU profiles to Alloy's
+Pyroscope-compatible HTTP receiver on port `4040`. Alloy forwards them to the
+single-binary Pyroscope backend, which stores them on a 2 Gi Longhorn PVC.
+Grafana reads that backend through the provisioned `Pyroscope` datasource.
+
+```text
+Python service (Pyroscope SDK) → Alloy :4040 → Pyroscope → Grafana Explore
+```
+
+The profiling SDK is enabled only when `PYROSCOPE_SERVER_ADDRESS` is present.
+See [`profiling/README.md`](profiling/README.md) for installation, verification,
+and the current Jaeger correlation limitation.
+
+### 7. Blackbox Exporter (In-Cluster Service Monitoring)
 
 **Deployment:** Single pod in observability namespace
 
