@@ -282,6 +282,106 @@ Do not expect an exact match. Node filesystem usage also includes the OS,
 kubelet logs, container writable layers, containerd metadata, Longhorn engine
 metadata, and other runtime files.
 
+### 4.1 Inspect Containerd Usage On The Affected Node
+
+When Longhorn reports `DiskPressure`, inspect the node filesystem directly.
+Use the node IP and SSH account available for the cluster:
+
+```bash
+NODE_IP="192.168.0.154"
+LONGHORN_NODE="homelab-workers-pve2-dk699-g9fc8"
+
+ssh root@"$NODE_IP" 'hostname; df -hT / /mnt/longhorn-storage'
+ssh root@"$NODE_IP" \
+  'du -xhd1 /var/lib/containerd 2>/dev/null | sort -h'
+ssh root@"$NODE_IP" \
+  'du -sh /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs \
+          /var/lib/containerd/io.containerd.content.v1.content 2>/dev/null'
+```
+
+The incident values were obtained from these commands:
+
+```text
+df -h /                                                   -> 40G total, 32G used, 6.4G available
+du -sh /var/lib/containerd                                -> about 26G
+du -sh .../io.containerd.snapshotter.v1.overlayfs          -> about 19G
+du -sh .../io.containerd.content.v1.content                -> about 7G
+```
+
+The two containerd subdirectories are parts of the 26 GiB total. Do not add
+the 19 GiB and 7 GiB values to the 26 GiB value again. The overlayfs directory
+contains unpacked image layers and container filesystem snapshots. The content
+directory contains content blobs and image layer data.
+
+Inspect the runtime objects and images before cleanup:
+
+```bash
+ssh root@"$NODE_IP" 'crictl ps -a'
+ssh root@"$NODE_IP" 'crictl images'
+ssh root@"$NODE_IP" 'ctr -n k8s.io images ls'
+```
+
+### 4.2 Remove Stale Runtime Objects Without Touching PVC Data
+
+Kubernetes/containerd garbage collection is threshold- and policy-driven; it
+does not guarantee that every exited container is removed immediately. Reboots,
+restarts, retained runtime records, and a small node disk can leave exited
+container snapshots behind until garbage collection runs successfully.
+
+List and remove only exited containers:
+
+```bash
+ssh root@"$NODE_IP" '
+  ids=$(crictl ps -a --state Exited -q)
+  echo "Exited containers: $(printf "%s\\n" "$ids" | awk "NF" | wc -l)"
+  if [ -n "$ids" ]; then
+    crictl rm $ids
+  fi
+'
+```
+
+This removes stopped container runtime objects and their writable snapshot
+references. It does not delete Kubernetes Deployments, StatefulSets, PVCs,
+Longhorn volumes, or Longhorn replica directories. Running containers are not
+selected by this command.
+
+After exited containers are removed, optionally remove image data that is no
+longer referenced by running containers:
+
+```bash
+ssh root@"$NODE_IP" 'crictl rmi --prune'
+```
+
+`crictl rmi --prune` can time out when containerd is under heavy disk pressure.
+That is not a reason to delete files manually from `/var/lib/containerd` or
+`/mnt/longhorn-storage`. Check the result and retry after exited containers
+have been removed. Images needed by running pods remain in use; images removed
+by the prune may be pulled again when a workload starts.
+
+Confirm that the cleanup created enough space:
+
+```bash
+ssh root@"$NODE_IP" 'df -h /'
+ssh root@"$NODE_IP" \
+  'du -sh /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs \
+          /var/lib/containerd/io.containerd.content.v1.content 2>/dev/null'
+kubectl get nodes.longhorn.io -n longhorn-system "$LONGHORN_NODE" -o json | jq -r '
+  .status.diskStatus[] |
+  .conditions[] |
+  select(.type == "Schedulable") |
+  [.status, .reason, .message] | @tsv
+'
+```
+
+In the incident, removing 34 exited containers reduced the node filesystem
+from about 32 GiB used to about 14 GiB used. Containerd overlayfs usage fell
+from about 19 GiB to about 6.1 GiB, and content usage fell from about 7 GiB to
+about 2.2 GiB. The Longhorn disk then became schedulable again. The
+`crictl rmi --prune` command was also attempted, but containerd timed out for
+most image removals; one unused image was removed. The large space recovery
+came from removing the 34 exited containers and their stale snapshot
+references, not from deleting Longhorn data.
+
 ---
 
 ## 5. Move A Faulted/Detached Single-Replica Volume
@@ -298,6 +398,27 @@ SOURCE_NODE="homelab-workers-pve1-85hh8-br9hw"
 TARGET_NODE="homelab-workers-pve2-dk699-g9fc8"
 ORIGINAL_REPLICAS="1"
 ```
+
+### 5.0 Pause GitOps Reconciliation When Argo CD Self-Heal Is Enabled
+
+Scaling a workload to zero can be immediately reverted by Argo CD when the
+application has automated sync with `selfHeal: true`. Pause the relevant
+parent and child applications before scaling down. Pause the root application
+first so it does not recreate the child application policies:
+
+```bash
+kubectl patch application root-app-helm -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+
+kubectl patch application helm-production -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+kubectl patch application helm-production-user-service -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+```
+
+Use the equivalent staging application names when the affected workload is in
+staging. This is a temporary cluster change; it does not modify the GitOps
+repository.
 
 ### 5.1 Stop The Workload
 
@@ -320,6 +441,11 @@ Salvage or rebuild may fail with:
 ```text
 disk ... is unschedulable for replica ...
 ```
+
+Prefer freeing node disk space first. Use the containerd inspection and
+cleanup procedure in Section 4.1 and Section 4.2, then check the Longhorn disk
+condition again. In the incident, this was sufficient; the threshold did not
+need to be changed.
 
 Check the current minimal available percentage:
 
@@ -364,6 +490,29 @@ kubectl get replicas.longhorn.io -n longhorn-system \
   -l longhornvolume="$VOLUME" -o wide
 ```
 
+The Longhorn API accepts the replica names explicitly. The UI is preferred,
+but the following command is useful when the UI action is unavailable:
+
+```bash
+MANAGER_POD=$(kubectl get pod -n longhorn-system \
+  -l app=longhorn-manager -o jsonpath='{.items[0].metadata.name}')
+MANAGER_IP=$(kubectl get pod -n longhorn-system \
+  -l app=longhorn-manager -o jsonpath='{.items[0].status.podIP}')
+REPLICA_NAME=$(kubectl get replicas.longhorn.io -n longhorn-system \
+  -l longhornvolume="$VOLUME" -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -n longhorn-system "$MANAGER_POD" -c longhorn-manager -- \
+  curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  -d "{\"names\":[\"$REPLICA_NAME\"]}" \
+  "http://${MANAGER_IP}:9500/v1/volumes/${VOLUME}?action=salvage" | jq
+```
+
+Salvage is valid only when the volume is detached and faulted, the selected
+replica belongs to that volume, and its disk is schedulable. A response such
+as `invalid robustness state: unknown` means Longhorn is still reconciling the
+volume; wait and inspect the volume/replica status again.
+
 ### 5.4 Manually Attach The Volume
 
 Longhorn UI:
@@ -383,6 +532,22 @@ attach -> starts the Longhorn engine
 
 A detached volume is passive. The Longhorn engine must run before Longhorn can
 rebuild a new replica from the existing data.
+
+The equivalent Longhorn API attach request is:
+
+```bash
+ATTACHMENT_ID="longhorn-runbook-$(date +%s)"
+
+kubectl exec -n longhorn-system "$MANAGER_POD" -c longhorn-manager -- \
+  curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  -d "{\"hostId\":\"$TARGET_NODE\",\"disableFrontend\":false,\"attachedBy\":\"runbook\",\"attacherType\":\"longhorn-api\",\"attachmentID\":\"$ATTACHMENT_ID\"}" \
+  "http://${MANAGER_IP}:9500/v1/volumes/${VOLUME}?action=attach" | jq
+```
+
+Use the Longhorn UI when possible. Do not create a manual attachment while a
+workload is still using the volume. Remove the manual attachment after the
+move, so CSI can attach the volume normally.
 
 ### 5.5 Force The New Replica To The Target Node
 
@@ -505,6 +670,26 @@ kubectl patch setting.longhorn.io -n longhorn-system \
   storage-minimal-available-percentage \
   --type=merge \
   -p '{"value":"25"}'
+```
+
+If Argo CD reconciliation was paused in Section 5.0, restore it after the
+workload and volume are healthy. Restore the root application first, followed
+by the parent and child applications:
+
+```bash
+kubectl patch application root-app-helm -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+
+kubectl patch application helm-production -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+kubectl patch application helm-production-user-service -n argocd --type=merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+```
+
+Confirm that the relevant applications are `Synced` and `Healthy`:
+
+```bash
+kubectl get applications.argoproj.io -n argocd
 ```
 
 ---
