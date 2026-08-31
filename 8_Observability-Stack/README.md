@@ -263,7 +263,7 @@ FastAPI application
     ↓ JsonLogFormatter
 JSON record on stdout
     ↓ container runtime envelope
-Alloy: CRI/Docker parse → JSON parse → labels/structured metadata
+Alloy: CRI/Docker parse → JSON parse → labels/OTel attributes
     ↓ OTLP/HTTP
 Elasticsearch
     ↓
@@ -313,14 +313,17 @@ Kibana Discover
 
 **Alloy field mapping:**
 
-Alloy keeps frequently filtered, low-cardinality fields as labels and keeps
-high-cardinality investigation fields as structured metadata.
+Alloy keeps frequently filtered, low-cardinality Kubernetes fields as labels.
+The Elasticsearch path then parses the original application JSON with an OTel
+transform and promotes application fields to log attributes. This avoids
+high-cardinality values becoming Loki labels while keeping them searchable in
+Kibana.
 
 | Mapping | Fields |
 |---|---|
-| Labels | `severity`, `logger`, `service_name`, `service_namespace`, `deployment_environment`, `event_name`, `outcome`, `http_method`, `http_status_code` |
-| Structured metadata | `service_version`, `trace_id`, `span_id`, `trace_sampled`, `actor_id`, `resource_type`, `resource_id`, `http_route`, `duration_ms`, `changed_fields`, `exception_*` |
-| Kubernetes labels | `namespace`, `pod`, `container`, `cluster`, `job` |
+| Kubernetes labels | `namespace`, `pod`, `container`, `cluster`, `job`, `stream` |
+| OTel log attributes | `severity`, `logger`, `service_name`, `service_namespace`, `deployment_environment`, `event_name`, `outcome`, `http_method`, `http_status_code`, `service_version`, `trace_id`, `span_id`, `trace_sampled`, `actor_id`, `resource_type`, `resource_id`, `http_route`, `duration_ms`, `changed_fields`, `exception_*` |
+| Log body / Kibana message | The application `message` value; the raw JSON object is not kept as the displayed message |
 
 **Cardinality rule:** Trace IDs, actor IDs, request paths, and exception text
 remain available for investigation without becoming unbounded labels.
