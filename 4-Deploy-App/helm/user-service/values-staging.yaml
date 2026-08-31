@@ -5,7 +5,7 @@ replicaCount: 3
 
 image:
   repository: ghcr.io/keremar/todo-app-user-service
-  tag: df1d130-v2.0-staging
+  tag: 3360767-v2.0-staging
 
 database:
   storageClassName: longhorn-storageclass
