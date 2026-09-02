@@ -45,14 +45,19 @@ cross-namespace tracing reference:
 kubectl apply -f '2-Gateway-API-and-MetalLB/envoy-gateway/alloy-referencegrant.yaml'
 ```
 
-With application namespaces in Istio STRICT mode, enroll the managed proxy and
-recreate it so the gateway-to-backend connection uses ambient mTLS:
+With application namespaces in Istio STRICT mode, `envoy-proxy.yaml` enrolls
+only the managed data-plane proxy in ambient mode so the gateway-to-backend
+connection uses mTLS. Do not label the whole `envoy-gateway-system` namespace:
+that would also capture the Envoy Gateway controller and can break its xDS
+connection to the proxy. Apply the resource and recreate the managed proxy:
 
 ```bash
-kubectl label namespace envoy-gateway-system \
-  istio.io/dataplane-mode=ambient --overwrite
+kubectl apply -f '2-Gateway-API-and-MetalLB/envoy-gateway/envoy-proxy.yaml'
 kubectl rollout restart deployment -n envoy-gateway-system \
   -l gateway.envoyproxy.io/owning-gateway-name=shared-gateway
+kubectl rollout status deployment -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-name=shared-gateway \
+  --timeout=3m
 ```
 
 ```bash

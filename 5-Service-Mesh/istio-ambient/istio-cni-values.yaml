@@ -1,1 +1,6 @@
 profile: ambient
+
+# Keep Istio's chained CNI entry in its own persistent conflist. Cilium can
+# rewrite its own conflist during a node reboot; sharing that file creates a
+# window where restored pods can start without Ambient traffic redirection.
+istioOwnedCNIConfig: true

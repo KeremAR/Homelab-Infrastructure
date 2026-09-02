@@ -18,6 +18,11 @@ spec:
               cpu: 500m
               memory: 512Mi
         pod:
+          labels:
+            # Enroll only the data-plane proxy in ambient mode. Do not label the
+            # whole namespace; that also captures the Envoy Gateway controller
+            # and can break its xDS connection to this proxy.
+            istio.io/dataplane-mode: ambient
           annotations:
             prometheus.io/scrape: "true"
             prometheus.io/port: "19001"
