@@ -17,5 +17,5 @@ resources:
 
 gateway:
   routeName: staging-frontend-route
-  hostname: todo-app-staging.192.168.0.110.nip.io
+  hostname: todo-app.keremar.com
   includeConfigRoute: true
