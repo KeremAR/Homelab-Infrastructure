@@ -60,8 +60,9 @@ data:
     }
 
     loki.source.file "pod_logs" {
-      targets    = local.file_match.pod_logs.targets
-      forward_to = [loki.process.pod_logs.receiver]
+      targets       = local.file_match.pod_logs.targets
+      forward_to    = [loki.process.pod_logs.receiver]
+      tail_from_end = true
     }
 
     loki.process "pod_logs" {
@@ -77,35 +78,12 @@ data:
         values = ["tmp_container_runtime"]
       }
 
-      // Application services emit one JSON object per stdout line. The JSON
-      // stage is intentionally non-destructive: plain-text logs from other
-      // containers remain available when no JSON fields are found.
+      // Read the application timestamp before bridging the original line to
+      // OpenTelemetry. Application fields are parsed after the bridge so they
+      // can be written directly to the native OTel log model.
       stage.json {
         expressions = {
-          timestamp               = "timestamp",
-          severity                = "severity",
-          logger                  = "logger",
-          message                 = "message",
-          service_name            = "service_name",
-          service_namespace       = "service_namespace",
-          service_version         = "service_version",
-          deployment_environment  = "deployment_environment",
-          trace_id                = "trace_id",
-          span_id                 = "span_id",
-          trace_sampled           = "trace_sampled",
-          event_name              = "event_name",
-          actor_id                = "actor_id",
-          resource_type           = "resource_type",
-          resource_id             = "resource_id",
-          outcome                 = "outcome",
-          http_method             = "http_method",
-          http_route              = "http_route",
-          http_status_code        = "http_status_code",
-          duration_ms             = "duration_ms",
-          changed_fields          = "changed_fields",
-          exception_type          = "exception_type",
-          exception_message       = "exception_message",
-          exception               = "exception",
+          timestamp = "timestamp",
         }
       }
 
@@ -114,24 +92,9 @@ data:
         format = "RFC3339Nano"
       }
 
-      // Keep only low-cardinality dimensions as indexed labels.
-      stage.labels {
-        values = {
-          severity               = "",
-          logger                 = "",
-          service_name           = "",
-          service_namespace      = "",
-          deployment_environment = "",
-          event_name             = "",
-          outcome                = "",
-          http_method            = "",
-          http_status_code       = "",
-        }
-      }
-
       // The Loki-to-OTel receiver does not reliably preserve Loki structured
       // metadata. Keep the original JSON body until the OTel transform below
-      // promotes the application fields to Elasticsearch attributes.
+      // maps it to the native OTel log model and semantic attributes.
       forward_to = [otelcol.receiver.loki.elasticsearch.receiver]
     }
 
@@ -153,30 +116,55 @@ data:
           // untouched when the body is not a JSON object.
           `merge_maps(cache, ParseJSON(body), "upsert") where IsMatch(body, "^\\s*\\{")`,
 
-          // Keep application fields as OTel attributes rather than relying on
-          // Loki structured metadata surviving the Loki-to-OTel bridge.
-          `set(attributes["severity"], cache["severity"]) where cache["severity"] != nil`,
+          // Native LogRecord fields.
+          `set(severity_text, cache["severity"]) where cache["severity"] != nil`,
+          `set(severity_number, SEVERITY_NUMBER_TRACE) where cache["severity"] == "TRACE"`,
+          `set(severity_number, SEVERITY_NUMBER_DEBUG) where cache["severity"] == "DEBUG"`,
+          `set(severity_number, SEVERITY_NUMBER_INFO) where cache["severity"] == "INFO"`,
+          `set(severity_number, SEVERITY_NUMBER_WARN) where cache["severity"] == "WARN" or cache["severity"] == "WARNING"`,
+          `set(severity_number, SEVERITY_NUMBER_ERROR) where cache["severity"] == "ERROR"`,
+          `set(severity_number, SEVERITY_NUMBER_FATAL) where cache["severity"] == "FATAL" or cache["severity"] == "CRITICAL"`,
+          `set(trace_id.string, cache["trace_id"]) where cache["trace_id"] != nil and IsMatch(cache["trace_id"], "^[0-9A-Fa-f]{32}$")`,
+          `set(span_id.string, cache["span_id"]) where cache["span_id"] != nil and IsMatch(cache["span_id"], "^[0-9A-Fa-f]{16}$")`,
+          `set(flags, 1) where cache["trace_sampled"] == true`,
+          `set(event_name, cache["event_name"]) where cache["event_name"] != nil`,
+
+          // First copy source labels and application identity into semantic
+          // attributes. groupbyattrs below promotes these keys to Resources.
+          `set(attributes["service.name"], attributes["service_name"]) where attributes["service_name"] != nil`,
+          `set(attributes["service.name"], cache["service_name"]) where cache["service_name"] != nil`,
+          `set(attributes["service.namespace"], cache["service_namespace"]) where cache["service_namespace"] != nil`,
+          `set(attributes["service.version"], cache["service_version"]) where cache["service_version"] != nil`,
+          `set(attributes["deployment.environment.name"], cache["deployment_environment"]) where cache["deployment_environment"] != nil`,
+          `set(attributes["k8s.cluster.name"], attributes["cluster"]) where attributes["cluster"] != nil`,
+          `set(attributes["k8s.namespace.name"], attributes["namespace"]) where attributes["namespace"] != nil`,
+          `set(attributes["k8s.pod.name"], attributes["pod"]) where attributes["pod"] != nil`,
+          `set(attributes["k8s.container.name"], attributes["container"]) where attributes["container"] != nil`,
+
+          // Event attributes. HTTP and exception keys follow OTel semantic
+          // conventions; audit-specific fields remain application attributes.
           `set(attributes["logger"], cache["logger"]) where cache["logger"] != nil`,
-          `set(attributes["service_name"], cache["service_name"]) where cache["service_name"] != nil`,
-          `set(attributes["service_namespace"], cache["service_namespace"]) where cache["service_namespace"] != nil`,
-          `set(attributes["deployment_environment"], cache["deployment_environment"]) where cache["deployment_environment"] != nil`,
-          `set(attributes["event_name"], cache["event_name"]) where cache["event_name"] != nil`,
-          `set(attributes["outcome"], cache["outcome"]) where cache["outcome"] != nil`,
-          `set(attributes["http_method"], cache["http_method"]) where cache["http_method"] != nil`,
-          `set(attributes["http_status_code"], cache["http_status_code"]) where cache["http_status_code"] != nil`,
-          `set(attributes["service_version"], cache["service_version"]) where cache["service_version"] != nil`,
-          `set(attributes["trace_id"], cache["trace_id"]) where cache["trace_id"] != nil`,
-          `set(attributes["span_id"], cache["span_id"]) where cache["span_id"] != nil`,
-          `set(attributes["trace_sampled"], cache["trace_sampled"]) where cache["trace_sampled"] != nil`,
+          `set(attributes["event.outcome"], cache["outcome"]) where cache["outcome"] != nil`,
+          `set(attributes["http.request.method"], cache["http_method"]) where cache["http_method"] != nil`,
+          `set(attributes["http.route"], cache["http_route"]) where cache["http_route"] != nil`,
+          `set(attributes["http.response.status_code"], cache["http_status_code"]) where cache["http_status_code"] != nil`,
           `set(attributes["actor_id"], cache["actor_id"]) where cache["actor_id"] != nil`,
           `set(attributes["resource_type"], cache["resource_type"]) where cache["resource_type"] != nil`,
           `set(attributes["resource_id"], cache["resource_id"]) where cache["resource_id"] != nil`,
-          `set(attributes["http_route"], cache["http_route"]) where cache["http_route"] != nil`,
           `set(attributes["duration_ms"], cache["duration_ms"]) where cache["duration_ms"] != nil`,
           `set(attributes["changed_fields"], cache["changed_fields"]) where cache["changed_fields"] != nil`,
-          `set(attributes["exception_type"], cache["exception_type"]) where cache["exception_type"] != nil`,
-          `set(attributes["exception_message"], cache["exception_message"]) where cache["exception_message"] != nil`,
-          `set(attributes["exception"], cache["exception"]) where cache["exception"] != nil`,
+          `set(attributes["exception.type"], cache["exception_type"]) where cache["exception_type"] != nil`,
+          `set(attributes["exception.message"], cache["exception_message"]) where cache["exception_message"] != nil`,
+          `set(attributes["exception.stacktrace"], cache["exception"]) where cache["exception"] != nil`,
+
+          // Remove non-semantic copies created by the Loki bridge after their
+          // values have been preserved above.
+          `delete_key(attributes, "service_name")`,
+          `delete_key(attributes, "cluster")`,
+          `delete_key(attributes, "namespace")`,
+          `delete_key(attributes, "pod")`,
+          `delete_key(attributes, "container")`,
+          `delete_key(attributes, "loki.attribute.labels")`,
 
           // Elasticsearch maps the OTel body to message/body.text. Replacing
           // the raw JSON body makes both fields human-readable without
@@ -184,6 +172,25 @@ data:
           `set(body, cache["message"]) where cache["message"] != nil`,
         ]
       }
+
+      output {
+        logs = [otelcol.processor.groupbyattrs.elasticsearch_logs.input]
+      }
+    }
+
+    // Promote stable entity identity from LogRecord attributes to native OTel
+    // Resources without mutating a Resource shared by unrelated log records.
+    otelcol.processor.groupbyattrs "elasticsearch_logs" {
+      keys = [
+        "service.name",
+        "service.namespace",
+        "service.version",
+        "deployment.environment.name",
+        "k8s.cluster.name",
+        "k8s.namespace.name",
+        "k8s.pod.name",
+        "k8s.container.name",
+      ]
 
       output {
         logs = [otelcol.processor.batch.elasticsearch_logs.input]

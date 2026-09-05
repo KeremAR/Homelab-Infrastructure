@@ -263,7 +263,7 @@ FastAPI application
     ↓ JsonLogFormatter
 JSON record on stdout
     ↓ container runtime envelope
-Alloy: CRI/Docker parse → JSON parse → labels/OTel attributes
+Alloy: CRI/Docker parse → native OTel LogRecord + Resource mapping
     ↓ OTLP/HTTP
 Elasticsearch
     ↓
@@ -313,28 +313,50 @@ Kibana Discover
 
 **Alloy field mapping:**
 
-Alloy keeps frequently filtered, low-cardinality Kubernetes fields as labels.
-The Elasticsearch path then parses the original application JSON with an OTel
-transform and promotes application fields to log attributes. This avoids
-high-cardinality values becoming Loki labels while keeping them searchable in
-Kibana.
+Alloy uses Loki components only to discover pod log files and remove the
+CRI/Docker envelope. It does not send these records to a Loki server. The
+Elasticsearch path parses the application JSON, maps correlation and severity
+to native OTel LogRecord fields, and promotes stable service and Kubernetes
+identity to OTel Resources. Request and audit details remain searchable
+LogRecord attributes rather than indexed Loki labels.
+
+Names such as `TraceId` and `SeverityText` below are the logical field names in
+the OpenTelemetry data model, not the literal JSON keys used by every backend.
+Alloy OTTL and Elasticsearch represent these native fields with snake_case
+keys. Native here means that the values are typed top-level LogRecord fields,
+not ordinary entries under `attributes` or text embedded in the log body.
+
+| Application JSON | Native OTel field | Elasticsearch `_source` / query field |
+|---|---|---|
+| `trace_id` | `TraceId` | `trace_id` / `trace.id` |
+| `span_id` | `SpanId` | `span_id` / `span.id` |
+| `trace_sampled` | `TraceFlags` | Set as Alloy's native `flags`; the current Elasticsearch OTel log mapping does not expose it in `_source` |
+| `severity` | `SeverityText`, `SeverityNumber` | `severity_text`, `severity_number` / `log.level`, `event.severity` |
+| `event_name` | `EventName` | `event_name` |
 
 | Mapping | Fields |
 |---|---|
-| Kubernetes labels | `namespace`, `pod`, `container`, `cluster`, `job`, `stream` |
-| OTel log attributes | `severity`, `logger`, `service_name`, `service_namespace`, `deployment_environment`, `event_name`, `outcome`, `http_method`, `http_status_code`, `service_version`, `trace_id`, `span_id`, `trace_sampled`, `actor_id`, `resource_type`, `resource_id`, `http_route`, `duration_ms`, `changed_fields`, `exception_*` |
+| OTel Resource attributes | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name`, `k8s.cluster.name`, `k8s.namespace.name`, `k8s.pod.name`, `k8s.container.name` |
+| OTel LogRecord attributes | `logger`, `event.outcome`, `http.request.method`, `http.route`, `http.response.status_code`, `actor_id`, `resource_type`, `resource_id`, `duration_ms`, `changed_fields`, `exception.type`, `exception.message`, `exception.stacktrace`, plus log file/stream metadata |
 | Log body / Kibana message | The application `message` value; the raw JSON object is not kept as the displayed message |
 
+`otelcol.processor.groupbyattrs` performs the Resource promotion after the JSON
+transform. This is important because a collector batch can contain records from
+different pods; grouping prevents one record's service identity from being
+written onto another record's Resource.
+
 **Cardinality rule:** Trace IDs, actor IDs, request paths, and exception text
-remain available for investigation without becoming unbounded labels.
+remain available for investigation without becoming Loki labels. Adding a new
+application JSON field also requires an explicit Alloy mapping; this allow-list
+prevents accidental field and mapping growth in Elasticsearch.
 
 **Kibana Discover examples:**
 
 ```text
-service_name: "user-service" AND event_name: "auth.login_failed"
-service_name: "todo-service" AND event_name: "todo.updated"
-actor_id: 7 AND event_name: "todo.deleted"
-trace_id: "<trace-id>"
+service.name: "user-service" AND event_name: "auth.login_failed"
+service.name: "todo-service" AND event_name: "todo.updated"
+attributes.actor_id: 7 AND event_name: "todo.deleted"
+trace.id: "<trace-id>"
 ```
 
 #### Traces Collection (OTLP Receiver)

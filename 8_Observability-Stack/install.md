@@ -314,6 +314,12 @@ one annotation level per workload. This stack uses Pod annotations for
 kube-state-metrics and a Service annotation for CoreDNS. An annotated Service
 must expose its metrics port with the name `metrics`.
 
+The Alloy DaemonSet has the `istio.io/dataplane-mode: ambient` pod label.
+This enrolls only Alloy, rather than the entire `observability` namespace, in
+the ambient mesh. It allows Alloy to scrape application pods in namespaces
+protected by `PeerAuthentication` `STRICT`; without it, those targets appear
+as `up=0` and application dashboards have no request or latency data.
+
 ```bash
 kubectl apply -f 8_Observability-Stack/alloy-bootstrap-config.yaml
 kubectl apply -f 8_Observability-Stack/metrics/alloy-metrics-config.yaml
@@ -387,7 +393,6 @@ Grafana: <http://grafana.192.168.0.110.nip.io>
 ## 9. Install the dashboards
 
 ```bash
-kubectl apply -f 8_Observability-Stack/dashboards/dashboard-memory-analysis.yaml
 kubectl apply -f 8_Observability-Stack/dashboards/dashboard-global-sre-overview.yaml
 kubectl apply -f 8_Observability-Stack/dashboards/dashboard-infrastructure-cluster.yaml
 kubectl apply -f 8_Observability-Stack/dashboards/dashboard-microservice-detail.yaml

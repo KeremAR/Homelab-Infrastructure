@@ -1,5 +1,9 @@
 controller:
   type: daemonset
+  # Alloy must join the ambient mesh to scrape workloads protected by
+  # namespace-wide STRICT mTLS (for example, staging services).
+  podLabels:
+    istio.io/dataplane-mode: ambient
   # Run one Alloy pod on the tainted control-plane node as well as on workers.
   tolerations:
     - key: node-role.kubernetes.io/control-plane

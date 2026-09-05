@@ -23,26 +23,6 @@ The dashboard discovers nodes and component instances dynamically and covers:
 
 ---
 
-### Dynamic Node Memory Analysis
-
-**Manifest:** `dashboards/dashboard-memory-analysis.yaml`
-
-**Purpose:** Compare memory utilization and the largest pod consumers across
-all cluster nodes without hard-coding node names.
-
-The dashboard obtains node names dynamically from `node_uname_info`. Its three
-base panels repeat for every selected node:
-
-1. **Memory Usage** — percentage of node memory currently in use.
-2. **Top Memory-Consuming Pods** — the 20 largest pod consumers on that node.
-3. **Top Five Pods Over Time** — memory history for the five largest pod consumers.
-
-The node selector supports one node, multiple nodes, or all nodes. This means
-new worker or control-plane nodes appear without editing the dashboard.
-
----
-
-
 ### Global SRE Overview - Cluster Health & Service Status
 
 **Manifest:** `dashboards/dashboard-global-sre-overview.yaml`
@@ -135,27 +115,28 @@ Instant cluster-wide health metrics:
 
 **Purpose:** Infrastructure-level monitoring for identifying resource bottlenecks, noisy neighbors, and cluster capacity issues.
 
-**Dashboard Structure (12 Panels):**
+**Dashboard Structure (11 Panels):**
 
-#### 🖥️ Cluster-Wide Saturation (Top Row - 4 Panels)
-Overall resource utilization across the cluster:
+#### 🖥️ Node-Aware Saturation (Top Row - 4 Panels)
+The top row follows the `$node` selector. `All` reports cluster-wide values;
+selecting one node reports only that node:
 
-1. **Cluster CPU Saturation (%)** - Average CPU usage across all nodes
+1. **CPU Saturation (%)** - Average CPU usage in the selected node scope
    - Green (< 70%): Healthy
    - Yellow (70-85%): High usage
    - Red (> 85%): Critical saturation
 
-2. **Cluster Memory Saturation (%)** - Average memory usage across all nodes
+2. **Memory Saturation (%)** - Memory usage in the selected node scope
    - Green (< 75%): Healthy
    - Yellow (75-90%): High usage
    - Red (> 90%): Critical saturation
 
-3. **Cluster Disk Usage (%)** - Disk space utilization
+3. **Disk Usage (%)** - Disk space utilization in the selected node scope
    - Green (< 80%): Healthy
    - Yellow (80-90%): High usage
    - Red (> 90%): Critical - action required
 
-4. **Network Traffic (In/Out)** - Cluster-wide network throughput (MB/s)
+4. **Network Traffic (In/Out)** - Network throughput in the selected node scope
    - Shows receive and transmit rates
 
 #### 🔍 Node Detail Section (Variable: $node)
@@ -177,33 +158,32 @@ Overall resource utilization across the cluster:
    - Filtered by `$node` variable
    - Shows receive/transmit rates per node
 
-#### 🏆 Noisy Neighbor Analysis (Middle Section - 2 Tables)
+#### 🏆 Noisy Neighbor Analysis (Middle Section - 1 Table)
 
-9. **Top 15 Memory Consumers** - Which pods use most RAM?
-   - Node, Namespace, Pod, Memory (MB)
-   - Sorted by memory usage (highest first)
-   - Color-coded: 100MB+ (orange), 500MB+ (red)
-
-10. **Top 15 CPU Consumers** - Which pods use most CPU?
-    - Node, Namespace, Pod, CPU (cores)
-    - Sorted by CPU usage (highest first)
-    - Color-coded: 0.5+ cores (orange), 1+ cores (red)
+9. **Top 10 Pod Resource Consumers** - One table with Namespace, Pod, Memory,
+   and CPU columns. The Node column is intentionally omitted. `$node=All`
+   ranks pods across every node, while a selected node narrows the input.
+   `$namespace` filters pods across the current node scope without changing
+   node-exporter saturation or node history panels. The default ranking is
+   Memory descending; either resource column can be clicked to reorder the ten
+   displayed rows.
 
 #### ⚠️ Problematic Pod Events (Bottom Section - 2 Panels)
 
-11. **Problematic Pod Events Table** - Critical pod status issues
+10. **Problematic Pod Events Table** - Critical pod status issues
     - 🔴 **OOMKilled** → Memory limit exceeded
     - 🟠 **CrashLoopBackOff** → Application repeatedly crashing
     - 🟡 **ImagePullBackOff/ErrImagePull** → Image not found
     - 🟣 **Evicted** → Node resource pressure forced eviction
     - 🔵 **FailedScheduling** → No resources available for scheduling
 
-12. **Pod Restart Rate (Last 5m)** - Top 10 restarting pods
+11. **Pod Restart Rate (Last 5m)** - Top 10 restarting pods
     - Bar chart showing restart rate per pod/container
     - Spikes indicate instability
 
 **Key Features:**
 - ✅ **Node Filtering**: `$node` variable to focus on specific nodes
+- ✅ **Namespace Filtering**: `$namespace` narrows pod resource consumers
 - ✅ **Noisy Neighbor Detection**: Identify resource-hogging pods quickly
 - ✅ **Root Cause Analysis**: Link pod events to resource exhaustion
 - ✅ **Capacity Planning**: Understand cluster resource utilization

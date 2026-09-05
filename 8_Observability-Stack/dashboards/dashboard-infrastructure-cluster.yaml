@@ -13,7 +13,7 @@ data:
       "tags": ["infrastructure", "cluster", "nodes", "pods", "resources"],
       "timezone": "browser",
       "schemaVersion": 38,
-      "version": 1,
+      "version": 2,
       "refresh": "30s",
       "templating": {
         "list": [
@@ -32,18 +32,34 @@ data:
               "text": "All",
               "value": "$__all"
             }
+          },
+          {
+            "name": "namespace",
+            "type": "query",
+            "label": "Namespace",
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "query": "label_values(container_memory_working_set_bytes{container!=\"\", container!=\"POD\"}, namespace)",
+            "refresh": 1,
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": {
+              "selected": true,
+              "text": ["All"],
+              "value": ["$__all"]
+            }
           }
         ]
       },
       "panels": [
         {
           "id": 1,
-          "title": "🖥️ Cluster CPU Saturation (%)",
+          "title": "🖥️ CPU Saturation (%) - $node",
           "type": "stat",
           "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
           "targets": [
             {
-              "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+              "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\", instance=~\"$node\"}[5m])) * 100)",
               "refId": "A"
             }
           ],
@@ -74,12 +90,12 @@ data:
         },
         {
           "id": 2,
-          "title": "🧠 Cluster Memory Saturation (%)",
+          "title": "🧠 Memory Saturation (%) - $node",
           "type": "stat",
           "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
           "targets": [
             {
-              "expr": "100 * (1 - (sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)))",
+              "expr": "100 * (1 - (sum(node_memory_MemAvailable_bytes{instance=~\"$node\"}) / sum(node_memory_MemTotal_bytes{instance=~\"$node\"})))",
               "refId": "A"
             }
           ],
@@ -110,12 +126,12 @@ data:
         },
         {
           "id": 3,
-          "title": "💾 Cluster Disk Usage (%)",
+          "title": "💾 Disk Usage (%) - $node",
           "type": "stat",
           "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
           "targets": [
             {
-              "expr": "100 - ((sum(node_filesystem_avail_bytes{fstype!~\"tmpfs|fuse.lxcfs|squashfs|vfat\"}) / sum(node_filesystem_size_bytes{fstype!~\"tmpfs|fuse.lxcfs|squashfs|vfat\"})) * 100)",
+              "expr": "100 - ((sum(node_filesystem_avail_bytes{instance=~\"$node\", fstype!~\"tmpfs|fuse.lxcfs|squashfs|vfat\"}) / sum(node_filesystem_size_bytes{instance=~\"$node\", fstype!~\"tmpfs|fuse.lxcfs|squashfs|vfat\"})) * 100)",
               "refId": "A"
             }
           ],
@@ -146,17 +162,17 @@ data:
         },
         {
           "id": 4,
-          "title": "📡 Network Traffic (In/Out)",
+          "title": "📡 Network Traffic (In/Out) - $node",
           "type": "stat",
           "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
           "targets": [
             {
-              "expr": "sum(rate(node_network_receive_bytes_total{device!~\"lo|veth.*|docker.*|flannel.*|cali.*\"}[5m])) / 1024 / 1024",
+              "expr": "sum(rate(node_network_receive_bytes_total{instance=~\"$node\", device!~\"lo|veth.*|docker.*|flannel.*|cali.*\"}[5m])) / 1024 / 1024",
               "refId": "A",
               "legendFormat": "In"
             },
             {
-              "expr": "sum(rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|docker.*|flannel.*|cali.*\"}[5m])) / 1024 / 1024",
+              "expr": "sum(rate(node_network_transmit_bytes_total{instance=~\"$node\", device!~\"lo|veth.*|docker.*|flannel.*|cali.*\"}[5m])) / 1024 / 1024",
               "refId": "B",
               "legendFormat": "Out"
             }
@@ -344,19 +360,27 @@ data:
         },
         {
           "id": 9,
-          "title": "🏆 Top 15 Memory Consumers (Noisy Neighbors)",
+          "title": "🏆 Top 10 Pod Resource Consumers - $node",
+          "description": "Shows the ten highest-memory pods for the selected node scope and namespaces. Click Memory or CPU to reorder the displayed rows. Node is intentionally omitted from the table; use the Node selector to narrow the scope.",
           "type": "table",
-          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 20},
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
           "targets": [
             {
-              "expr": "topk(15, sum(container_memory_working_set_bytes{container!=\"\", container!=\"POD\"}) by (namespace, pod, node)) / 1024 / 1024",
+              "expr": "sum(container_memory_working_set_bytes{node=~\"$node\", namespace=~\"$namespace\", container!=\"\", container!=\"POD\"}) by (namespace, pod) / 1024 / 1024",
               "refId": "A",
+              "format": "table",
+              "instant": true
+            },
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{node=~\"$node\", namespace=~\"$namespace\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
+              "refId": "B",
               "format": "table",
               "instant": true
             }
           ],
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "transformations": [
+            {"id": "merge"},
             {
               "id": "organize",
               "options": {
@@ -365,16 +389,16 @@ data:
                   "__name__": true
                 },
                 "indexByName": {
-                  "node": 0,
-                  "namespace": 1,
-                  "pod": 2,
-                  "Value": 3
+                  "namespace": 0,
+                  "pod": 1,
+                  "Value #A": 2,
+                  "Value #B": 3
                 },
                 "renameByName": {
-                  "node": "Node",
                   "namespace": "Namespace",
                   "pod": "Pod",
-                  "Value": "Memory (MB)"
+                  "Value #A": "Memory (MiB)",
+                  "Value #B": "CPU (cores)"
                 }
               }
             },
@@ -383,10 +407,11 @@ data:
               "options": {
                 "fields": {},
                 "sort": [
-                  {"field": "Memory (MB)", "desc": true}
+                  {"field": "Memory (MiB)", "desc": true}
                 ]
               }
-            }
+            },
+            {"id": "limit", "options": {"limitField": "10"}}
           ],
           "fieldConfig": {
             "defaults": {
@@ -397,7 +422,7 @@ data:
             },
             "overrides": [
               {
-                "matcher": {"id": "byName", "options": "Memory (MB)"},
+                "matcher": {"id": "byName", "options": "Memory (MiB)"},
                 "properties": [
                   {"id": "unit", "value": "mbytes"},
                   {"id": "decimals", "value": 1},
@@ -414,68 +439,7 @@ data:
                     }
                   }
                 ]
-              }
-            ]
-          },
-          "options": {
-            "showHeader": true,
-            "sortBy": []
-          }
-        },
-        {
-          "id": 10,
-          "title": "🔥 Top 15 CPU Consumers (Noisy Neighbors)",
-          "type": "table",
-          "gridPos": {"h": 10, "w": 12, "x": 12, "y": 20},
-          "targets": [
-            {
-              "expr": "topk(15, sum(rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod, node))",
-              "refId": "A",
-              "format": "table",
-              "instant": true
-            }
-          ],
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true,
-                  "__name__": true
-                },
-                "indexByName": {
-                  "node": 0,
-                  "namespace": 1,
-                  "pod": 2,
-                  "Value": 3
-                },
-                "renameByName": {
-                  "node": "Node",
-                  "namespace": "Namespace",
-                  "pod": "Pod",
-                  "Value": "CPU (cores)"
-                }
-              }
-            },
-            {
-              "id": "sortBy",
-              "options": {
-                "fields": {},
-                "sort": [
-                  {"field": "CPU (cores)", "desc": true}
-                ]
-              }
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "left",
-                "displayMode": "auto"
-              }
-            },
-            "overrides": [
+              },
               {
                 "matcher": {"id": "byName", "options": "CPU (cores)"},
                 "properties": [
