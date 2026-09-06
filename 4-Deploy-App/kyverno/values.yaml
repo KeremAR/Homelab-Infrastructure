@@ -1,0 +1,7 @@
+# PolicyReports make Audit-mode violations queryable without blocking workloads.
+reportsServer:
+  enabled: true
+
+crds:
+  reportsServer:
+    enabled: true

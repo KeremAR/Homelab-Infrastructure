@@ -11,10 +11,12 @@ Complete these steps before deploying the application:
 1. Install the cluster networking, MetalLB and one Gateway API controller.
 2. Install [Longhorn](../3-Longhorn/README.md) and create
    `longhorn-storageclass` for persistent database volumes.
-3. Install [Argo Rollouts](./argo-rollouts/README.md). The application YAML
+3. Install [Kyverno](./kyverno/README.md) so the cluster can audit application
+   resources against the shared policy guardrails.
+4. Install [Argo Rollouts](./argo-rollouts/README.md). The application YAML
    contains `kind: Rollout`, so Kubernetes cannot accept it until the Rollouts
    CRDs and controller exist.
-4. Choose one deployment method below.
+5. Choose one deployment method below.
 
 ## Method 1: plain Kubernetes manifests
 
@@ -23,7 +25,7 @@ service and environment. This path is useful for learning the Kubernetes
 objects directly and seeing exactly what is applied without template
 rendering.
 
-Follow [3B-Kubectl-Deploy.md](./kubectl/3B-Kubectl-Deploy.md).
+Follow the [kubectl deployment guide](./kubectl/README.md).
 
 ## Method 2: Helm charts
 
