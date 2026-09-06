@@ -1,7 +1,10 @@
-# PolicyReports make Audit-mode violations queryable without blocking workloads.
+# The built-in reports controller stores PolicyReports in Kubernetes and is
+# sufficient for this cluster. The optional reports-server adds PostgreSQL and
+# aggregated API services, and creates a large watch footprint for a small
+# control plane.
 reportsServer:
-  enabled: true
+  enabled: false
 
 crds:
   reportsServer:
-    enabled: true
+    enabled: false

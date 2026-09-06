@@ -382,6 +382,76 @@ most image removals; one unused image was removed. The large space recovery
 came from removing the 34 exited containers and their stale snapshot
 references, not from deleting Longhorn data.
 
+### 4.3 Reclaim Deleted Files With Longhorn Filesystem Trim
+
+Deleting files inside a mounted PVC makes the space reusable inside that
+filesystem, but it does not immediately reduce the Longhorn volume's `Actual
+Size`. Longhorn is a block storage system and needs an UNMAP/TRIM request to
+learn which blocks are no longer used.
+
+Do not use `sudo fstrim -av` as the normal Longhorn maintenance mechanism. That
+command trims every eligible filesystem visible in the node mount namespace.
+For a Longhorn volume, target the specific mounted PVC through Longhorn's
+`Trim Filesystem` operation or its `filesystem-trim` recurring job.
+
+This repository defines a conservative recurring job:
+
+```text
+manifest: 3-Longhorn/longhorn-filesystem-trim.yaml
+schedule: every day at 03:30
+concurrency: 1
+scope: only explicitly labeled PVCs
+```
+
+Install the recurring job:
+
+```bash
+kubectl apply -f 3-Longhorn/longhorn-filesystem-trim.yaml
+```
+
+The Prometheus PVC opts in through these labels:
+
+```yaml
+metadata:
+  labels:
+    recurring-job.longhorn.io/source: enabled
+    recurring-job.longhorn.io/filesystem-trim-daily: enabled
+```
+
+The source label tells Longhorn to synchronize recurring-job labels from the
+PVC to its Longhorn Volume. The second label assigns the named recurring job.
+Only attached and mounted volumes can be trimmed. Verify the assignment and
+job history with:
+
+```bash
+kubectl get recurringjob.longhorn.io -n longhorn-system filesystem-trim-daily
+kubectl get pvc -n observability prometheus-data --show-labels
+kubectl get jobs -n longhorn-system
+```
+
+Filesystem trim performs storage I/O. Running it every 30 minutes across many
+volumes creates unnecessary work, so start with a daily schedule and
+`concurrency: 1`. A successful trim may still reclaim little space when valid
+Longhorn snapshots retain the old blocks. Review snapshot retention separately
+before enabling automatic snapshot removal during trim.
+
+### 4.4 Do Not Schedule Blind `crictl` Cleanup
+
+The exited-container cleanup in Section 4.2 is an incident recovery action, not
+a Longhorn recurring job. Longhorn does not own containerd runtime objects.
+
+A Kubernetes CronJob would need privileged access to every node's containerd
+socket and host filesystem. A host cron or systemd timer avoids that pod access
+but creates configuration drift and can remove stopped-container evidence while
+an incident is being investigated. Kubelet and containerd should normally
+garbage-collect exited containers and unused images themselves.
+
+If stale runtime objects repeatedly accumulate, investigate kubelet image and
+container garbage-collection settings and containerd health first. Keep the
+explicit `crictl rm` and `crictl rmi --prune` commands as controlled recovery
+steps unless repeated incidents prove that an additional node maintenance
+timer is necessary.
+
 ---
 
 ## 5. Move A Faulted/Detached Single-Replica Volume

@@ -3,10 +3,13 @@ kind: PersistentVolumeClaim
 metadata:
   name: prometheus-data
   namespace: observability
+  labels:
+    recurring-job.longhorn.io/source: enabled
+    recurring-job.longhorn.io/filesystem-trim-daily: enabled
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 2Gi
+      storage: 3Gi
   storageClassName: longhorn-storageclass

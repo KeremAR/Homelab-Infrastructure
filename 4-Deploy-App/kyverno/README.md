@@ -17,6 +17,11 @@ enforcing a rule. Mutation and resource-generation policies are intentionally
 left for later because they change or create resources rather than only
 reporting their condition.
 
+The chart's built-in reports controller is used for `PolicyReport` and
+`ClusterPolicyReport` resources. The optional external reports server remains
+disabled: it adds PostgreSQL-backed aggregated APIs and a much larger watch
+footprint, which is unnecessary for this small single-control-plane cluster.
+
 ## Install Kyverno
 
 ```bash

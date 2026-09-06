@@ -1,4 +1,6 @@
 server:
+  retention: 7d
+  retentionSize: 2GB
   persistentVolume:
     enabled: true
     existingClaim: prometheus-data

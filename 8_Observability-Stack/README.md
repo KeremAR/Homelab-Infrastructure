@@ -78,7 +78,9 @@ Dashboard descriptions are maintained separately in
 **Configuration Highlights:**
 - **Remote Write Receiver**: Enabled to accept metrics from Alloy agents
 - **Exemplar Storage**: Enabled so metric samples can retain trace IDs
-- **Persistent Storage**: Explicitly created 2 Gi Longhorn PVC
+- **Persistent Storage**: Explicitly created 3 Gi Longhorn PVC
+- **Retention Guardrail**: Seven days, capped at 2 GB so WAL and compaction
+  overhead cannot consume the entire filesystem
 - **Minimal Scraping**: Only self-monitors (Alloy handles all collection)
 
 **Why Remote Write?**
